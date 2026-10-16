@@ -1,0 +1,308 @@
+{
+  "0": {
+    "nom": "Abadla",
+    "wilaya_id": 8,
+    "code_postal": "817",
+    "has_stop_desk": 0
+  },
+  "1": {
+    "nom": "Abalessa",
+    "wilaya_id": 11,
+    "code_postal": "1102",
+    "has_stop_desk": 0
+  },
+  "2": {
+    "nom": "Abi Youcef",
+    "wilaya_id": 15,
+    "code_postal": "1531",
+    "has_stop_desk": 0
+  },
+  "3": {
+    "nom": "Abou El Hassan",
+    "wilaya_id": 2,
+    "code_postal": "222",
+    "has_stop_desk": 0
+  },
+  "4": {
+    "nom": "Achaacha",
+    "wilaya_id": 27,
+    "code_postal": "2717",
+    "has_stop_desk": 0
+  },
+  "5": {
+    "nom": "Adekar",
+    "wilaya_id": 6,
+    "code_postal": "624",
+    "has_stop_desk": 0
+  },
+  "6": {
+    "nom": "Adrar",
+    "wilaya_id": 1,
+    "code_postal": "101",
+    "has_stop_desk": 0
+  },
+  "7": {
+    "nom": "Afir",
+    "wilaya_id": 35,
+    "code_postal": "3503",
+    "has_stop_desk": 0
+  },
+  "8": {
+    "nom": "Aflou",
+    "wilaya_id": 3,
+    "code_postal": "319",
+    "has_stop_desk": 0
+  },
+  "9": {
+    "nom": "Aghbal",
+    "wilaya_id": 42,
+    "code_postal": "4207",
+    "has_stop_desk": 0
+  },
+  "10": {
+    "nom": "Aghbalou",
+    "wilaya_id": 10,
+    "code_postal": "1027",
+    "has_stop_desk": 0
+  },
+  "11": {
+    "nom": "Aghlal",
+    "wilaya_id": 46,
+    "code_postal": "4607",
+    "has_stop_desk": 0
+  },
+  "12": {
+    "nom": "Aghribs",
+    "wilaya_id": 15,
+    "code_postal": "1553",
+    "has_stop_desk": 0
+  },
+  "13": {
+    "nom": "Agouni Gueghrane",
+    "wilaya_id": 15,
+    "code_postal": "1561",
+    "has_stop_desk": 0
+  },
+  "14": {
+    "nom": "Ahl El Ksar",
+    "wilaya_id": 10,
+    "code_postal": "1022",
+    "has_stop_desk": 0
+  },
+  "15": {
+    "nom": "Ahmed Rachedi",
+    "wilaya_id": 43,
+    "code_postal": "4311",
+    "has_stop_desk": 0
+  },
+  "16": {
+    "nom": "Ahmer El Ain",
+    "wilaya_id": 42,
+    "code_postal": "4219",
+    "has_stop_desk": 0
+  },
+  "17": {
+    "nom": "Ain Abessa",
+    "wilaya_id": 19,
+    "code_postal": "1914",
+    "has_stop_desk": 0
+  },
+  "18": {
+    "nom": "Ain Abid",
+    "wilaya_id": 25,
+    "code_postal": "2507",
+    "has_stop_desk": 0
+  },
+  "19": {
+    "nom": "Ain Adden",
+    "wilaya_id": 22,
+    "code_postal": "2230",
+    "has_stop_desk": 0
+  },
+  "20": {
+    "nom": "Ain Amguel",
+    "wilaya_id": 11,
+    "code_postal": "1109",
+    "has_stop_desk": 0
+  },
+  "21": {
+    "nom": "Ain Arnat",
+    "wilaya_id": 19,
+    "code_postal": "1926",
+    "has_stop_desk": 0
+  },
+  "22": {
+    "nom": "Ain Azel",
+    "wilaya_id": 19,
+    "code_postal": "1940",
+    "has_stop_desk": 0
+  },
+  "23": {
+    "nom": "Ain Babouche",
+    "wilaya_id": 4,
+    "code_postal": "408",
+    "has_stop_desk": 0
+  },
+  "24": {
+    "nom": "Ain Beida",
+    "wilaya_id": 4,
+    "code_postal": "402",
+    "has_stop_desk": 0
+  },
+  "25": {
+    "nom": "Ain Beida",
+    "wilaya_id": 30,
+    "code_postal": "3002",
+    "has_stop_desk": 0
+  },
+  "26": {
+    "nom": "Ain Beida Harriche",
+    "wilaya_id": 43,
+    "code_postal": "4330",
+    "has_stop_desk": 0
+  },
+  "27": {
+    "nom": "Ain Ben Beida",
+    "wilaya_id": 24,
+    "code_postal": "2414",
+    "has_stop_desk": 0
+  },
+  "28": {
+    "nom": "Ain Ben Khelil",
+    "wilaya_id": 45,
+    "code_postal": "4509",
+    "has_stop_desk": 0
+  },
+  "29": {
+    "nom": "Ain Benian",
+    "wilaya_id": 16,
+    "code_postal": "1657",
+    "has_stop_desk": 1
+  },
+  "30": {
+    "nom": "Ain Benian",
+    "wilaya_id": 44,
+    "code_postal": "4426",
+    "has_stop_desk": 0
+  },
+  "31": {
+    "nom": "Ain Berda",
+    "wilaya_id": 23,
+    "code_postal": "2309",
+    "has_stop_desk": 0
+  },
+  "32": {
+    "nom": "Ain Bessem",
+    "wilaya_id": 10,
+    "code_postal": "1035",
+    "has_stop_desk": 0
+  },
+  "33": {
+    "nom": "Ain Biya",
+    "wilaya_id": 31,
+    "code_postal": "3126",
+    "has_stop_desk": 0
+  },
+  "34": {
+    "nom": "Ain Bouchekif",
+    "wilaya_id": 14,
+    "code_postal": "1403",
+    "has_stop_desk": 0
+  },
+  "35": {
+    "nom": "Ain Boucif",
+    "wilaya_id": 26,
+    "code_postal": "2604",
+    "has_stop_desk": 0
+  },
+  "36": {
+    "nom": "Ain Boudinar",
+    "wilaya_id": 27,
+    "code_postal": "2728",
+    "has_stop_desk": 0
+  },
+  "37": {
+    "nom": "Ain Bouyahia",
+    "wilaya_id": 44,
+    "code_postal": "4433",
+    "has_stop_desk": 0
+  },
+  "38": {
+    "nom": "Ain Bouziane",
+    "wilaya_id": 21,
+    "code_postal": "2122",
+    "has_stop_desk": 0
+  },
+  "39": {
+    "nom": "Ain Charchar",
+    "wilaya_id": 21,
+    "code_postal": "2106",
+    "has_stop_desk": 0
+  },
+  "40": {
+    "nom": "Ain Chouhada",
+    "wilaya_id": 17,
+    "code_postal": "1723",
+    "has_stop_desk": 0
+  },
+  "41": {
+    "nom": "Ain Defla",
+    "wilaya_id": 44,
+    "code_postal": "4401",
+    "has_stop_desk": 0
+  },
+  "42": {
+    "nom": "Ain Deheb",
+    "wilaya_id": 14,
+    "code_postal": "1406",
+    "has_stop_desk": 0
+  },
+  "43": {
+    "nom": "Ain Diss",
+    "wilaya_id": 4,
+    "code_postal": "415",
+    "has_stop_desk": 0
+  },
+  "44": {
+    "nom": "Ain Djasser",
+    "wilaya_id": 5,
+    "code_postal": "519",
+    "has_stop_desk": 1
+  },
+  "45": {
+    "nom": "Ain El Arbaa",
+    "wilaya_id": 46,
+    "code_postal": "4609",
+    "has_stop_desk": 0
+  },
+  "46": {
+    "nom": "Ain El Assel",
+    "wilaya_id": 36,
+    "code_postal": "3606",
+    "has_stop_desk": 0
+  },
+  "47": {
+    "nom": "Ain El Berd",
+    "wilaya_id": 22,
+    "code_postal": "2228",
+    "has_stop_desk": 0
+  },
+  "48": {
+    "nom": "Ain El Hadid",
+    "wilaya_id": 14,
+    "code_postal": "1418",
+    "has_stop_desk": 0
+  },
+  "49": {
+    "nom": "Ain El Hadjar",
+    "wilaya_id": 10,
+    "code_postal": "1025",
+    "has_stop_desk": 0
+  },
+  "50": {
+    "nom": "Ain El Hadjar",
+    "wilaya_id": 20,
+    "code_postal": "2003",
+    "has_stop_desk": 0
+  }
+}

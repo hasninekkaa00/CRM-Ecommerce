@@ -1,0 +1,8 @@
+{
+  "name": "E-commerce COD Dashboard",
+  "description": "A comprehensive dashboard for managing cash-on-delivery e-commerce orders, tracking campaigns, partner capital and expense management, and calculating real-time profitability.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

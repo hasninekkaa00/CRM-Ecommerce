@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --sidebar-bg: #1a1a1a;
+  --sidebar-active-bg: #2563eb;
+  --sidebar-text: #ffffff;
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #eff6ff;
+  --primary-light-border: #bfdbfe;
+}
+
+@theme {
+  --font-sans: "Tajawal", ui-sans-serif, system-ui, sans-serif;
+  --color-primary-500: var(--primary-color);
+  --color-primary-600: var(--primary-hover);
+  --color-primary-50: var(--primary-light);
+  --color-primary-200: var(--primary-light-border);
+
+  /* Override blue to map to primary theme color, so classes like bg-blue-600 become theme-aware automatically */
+  --color-blue-50: var(--primary-light);
+  --color-blue-100: var(--primary-light-border);
+  --color-blue-200: color-mix(in srgb, var(--primary-color) 30%, white);
+  --color-blue-300: color-mix(in srgb, var(--primary-color) 50%, white);
+  --color-blue-400: color-mix(in srgb, var(--primary-color) 70%, white);
+  --color-blue-500: var(--primary-color);
+  --color-blue-600: var(--primary-color);
+  --color-blue-700: var(--primary-hover);
+  --color-blue-800: color-mix(in srgb, var(--primary-hover) 80%, black);
+  --color-blue-900: color-mix(in srgb, var(--primary-hover) 60%, black);
+}
+
+body {
+  font-family: "Tajawal", sans-serif;
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+@media print {
+  body {
+    background-color: white !important;
+  }
+  .print-hidden, 
+  nav, 
+  header, 
+  aside,
+  [role="navigation"] {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}

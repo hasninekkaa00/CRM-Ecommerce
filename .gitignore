@@ -1,0 +1,39 @@
+# Logs and build output
+node_modules/
+build/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Environment variables and secrets
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+*.crt
+
+# Backups
+backup_*.json
+*.backup
+*.bak
+
+# Scratch and temporary files
+patch*
+fix*
+update*
+check*
+find*
+add*
+rewrite*
+replace*
+remove*
+*.py
+*.txt
+*.sh
+test*
+workspace/
+.dev.env.json
+.dev.pid

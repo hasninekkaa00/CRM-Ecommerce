@@ -1,0 +1,44 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/api/shipping/ecotrack/create"
+  to = "/.netlify/functions/shipping-ecotrack-create"
+  status = 200
+
+[[redirects]]
+  from = "/api/shipping/ecotrack/tracking"
+  to = "/.netlify/functions/shipping-ecotrack-tracking"
+  status = 200
+
+[[redirects]]
+  from = "/api/shipping/ecotrack/fees"
+  to = "/.netlify/functions/shipping-ecotrack-fees"
+  status = 200
+
+[[redirects]]
+  from = "/api/woocommerce/sync"
+  to = "/.netlify/functions/woocommerce-sync"
+  status = 200
+
+[[redirects]]
+  from = "/api/woocommerce/products"
+  to = "/.netlify/functions/woocommerce-products"
+  status = 200
+
+[[redirects]]
+  from = "/api/sms/send"
+  to = "/.netlify/functions/sms-send"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhooks/woocommerce"
+  to = "/.netlify/functions/woocommerce-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+

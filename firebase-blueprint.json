@@ -1,0 +1,261 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "An order placed in the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "sku": { "type": "string" },
+        "orderDate": { "type": "string", "format": "date-time" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "region": { "type": "string" },
+        "city": { "type": "string" },
+        "productName": { "type": "string" },
+        "variation": { "type": "string" },
+        "qnts": { "type": "number" },
+        "priceWithoutDelivery": { "type": "number" },
+        "deliveryPrice": { "type": "number" },
+        "totalCharge": { "type": "number" },
+        "shippingMethod": { "type": "string" },
+        "confirmedBy": { "type": "string" },
+        "status1": { "type": "string" },
+        "deliveryCompany": { "type": "string" },
+        "postponementDate": { "type": "string" },
+        "status2": { "type": "string" },
+        "ip": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "orderId", "orderDate", "fullName", "phone", "totalCharge"]
+    },
+    "AbandonedOrder": {
+      "title": "AbandonedOrder",
+      "description": "An abandoned cart or order attempt.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "sku": { "type": "string" },
+        "orderDate": { "type": "string", "format": "date-time" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "region": { "type": "string" },
+        "city": { "type": "string" },
+        "productName": { "type": "string" },
+        "variation": { "type": "string" },
+        "qnts": { "type": "number" },
+        "priceWithoutDelivery": { "type": "number" },
+        "deliveryPrice": { "type": "number" },
+        "totalCharge": { "type": "number" },
+        "shippingMethod": { "type": "string" },
+        "confirmedBy": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "deliveryCompany": { "type": "string" }
+      },
+      "required": ["id", "orderDate", "phone", "status"]
+    },
+    "ShippingBureau": {
+      "title": "ShippingBureau",
+      "description": "Shipping bureau location details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "wilayaCode": { "type": "string" },
+        "wilayaName": { "type": "string" },
+        "address": { "type": "string" },
+        "phones": { "type": "string" }
+      },
+      "required": ["id", "wilayaCode", "wilayaName"]
+    },
+    "CampaignRecord": {
+      "title": "CampaignRecord",
+      "description": "Daily campaign performance record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "productName": { "type": "string" },
+        "spend": { "type": "number" },
+        "sales": { "type": "number" },
+        "confirmed": { "type": "number" },
+        "returned": { "type": "number" },
+        "profit": { "type": "number" },
+        "dynamicFields": { "type": "object" }
+      },
+      "required": ["id", "date", "productName", "spend", "sales", "confirmed", "returned", "profit"]
+    },
+    "CampaignField": {
+      "title": "CampaignField",
+      "description": "Dynamic column configuration for campaigns.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "name", "type"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Global system options and configuration registries.",
+      "type": "object",
+      "properties": {
+        "status1Options": { "type": "array", "items": { "type": "string" } },
+        "status2Options": { "type": "array", "items": { "type": "string" } },
+        "deliveryCompanies": { "type": "array", "items": { "type": "string" } },
+        "confirmers": { "type": "array", "items": { "type": "string" } },
+        "defaultStatus1": { "type": "string" },
+        "defaultStatus2": { "type": "string" },
+        "defaultDeliveryCompany": { "type": "string" },
+        "defaultConfirmedBy": { "type": "string" },
+        "returnCost": { "type": "number" },
+        "returnCostMode": { "type": "string" },
+        "returnMonthlySubscription": { "type": "number" }
+      },
+      "required": ["status1Options", "status2Options", "deliveryCompanies", "confirmers"]
+    },
+    "InventoryMovement": {
+      "title": "InventoryMovement",
+      "description": "A record of stock addition, reduction, or adjustment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "variationId": { "type": "string" },
+        "variationName": { "type": "string" },
+        "sku": { "type": "string" },
+        "type": { "type": "string" },
+        "typeName": { "type": "string" },
+        "oldStock": { "type": "number" },
+        "changeQty": { "type": "number" },
+        "newStock": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      },
+      "required": ["id", "productId", "productName", "type", "typeName", "oldStock", "changeQty", "newStock", "date"]
+    },
+    "Partner": {
+      "title": "Partner",
+      "description": "A business partner profile with equity and capital settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "sharePercentage": { "type": "number" },
+        "initialCapital": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "PartnerTransaction": {
+      "title": "PartnerTransaction",
+      "description": "A financial transaction or capital injection/withdrawal associated with a partner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "targetPartnerId": { "type": "string" },
+        "targetPartnerName": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number" },
+        "type": { "type": "string" },
+        "category": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "description": { "type": "string" },
+        "notes": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "partnerId", "partnerName", "date", "amount", "type", "description", "createdAt"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "System user account with role and permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "confirmer"] },
+        "isActive": { "type": "boolean" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "email", "displayName", "role", "isActive", "createdAt"]
+    },
+    "ConfirmerInvoice": {
+      "title": "ConfirmerInvoice",
+      "description": "Financial settlement invoice for a confirmation team member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "confirmerId": { "type": "string" },
+        "confirmerName": { "type": "string" },
+        "periodFrom": { "type": "string" },
+        "periodTo": { "type": "string" },
+        "commissionType": { "type": "string" },
+        "finalTotal": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "draft", "pending"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "invoiceNumber", "confirmerId", "confirmerName", "finalTotal", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/confirmerInvoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/ConfirmerInvoice" },
+      "description": "Confirmer commission invoices and payout records"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/AppUser" },
+      "description": "User accounts and permissions collection"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SystemSettings" },
+      "description": "Global settings configuration document"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Orders collection"
+    },
+    "/abandonedOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/AbandonedOrder" },
+      "description": "Abandoned orders collection"
+    },
+    "/campaignRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/CampaignRecord" },
+      "description": "Campaign records collection"
+    },
+    "/campaignFields/{fieldId}": {
+      "schema": { "$ref": "#/entities/CampaignField" },
+      "description": "Campaign dynamic fields configuration"
+    },
+    "/shippingBureaus/{bureauId}": {
+      "schema": { "$ref": "#/entities/ShippingBureau" },
+      "description": "Shipping bureaus collection"
+    },
+    "/inventoryMovements/{movementId}": {
+      "schema": { "$ref": "#/entities/InventoryMovement" },
+      "description": "Stock inventory movements log collection"
+    },
+    "/partners/{partnerId}": {
+      "schema": { "$ref": "#/entities/Partner" },
+      "description": "Business partners collection"
+    },
+    "/partnerTransactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/PartnerTransaction" },
+      "description": "Partner capital and expense transactions collection"
+    }
+  }
+}

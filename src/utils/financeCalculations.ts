@@ -350,8 +350,8 @@ export const createFinanceCalculator = (
   periodStart: Date | null,
   periodEnd: Date | null,
   productFilter: string,
-  confirmerFilter: string,
-  start: Date | null
+  confirmerFilter: string = 'all',
+  start?: Date | null
 ) => {
     let expectedRev = 0, expectedCogs = 0, expectedShip = 0, expectedCount = 0, expectedExtCost = 0;
     let realRev = 0, realCogs = 0, realShip = 0, realCount = 0, realExtCost = 0;
@@ -449,7 +449,7 @@ export const createFinanceCalculator = (
     const adSpendDZD = adSpendUSD * exRate;
 
     const extraExpenses = expenses.filter(e => {
-       if (dateFilter === 'all') return periodStart === null || periodStart === start;
+       if (dateFilter === 'all') return true;
        if (!periodStart || !periodEnd) return false;
        const eDate = safeParseDate(e.date);
        return eDate && safeIsWithinInterval(eDate, { start: periodStart, end: periodEnd });

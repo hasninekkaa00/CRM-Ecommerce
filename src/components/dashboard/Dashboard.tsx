@@ -1,18 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../../store';
 import { checkProductMatch, renderProductFilterOptions } from '../../utils/productFilters';
+import { createFinanceCalculator } from '../../utils/financeCalculations';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
 import { format, subDays, parseISO, isWithinInterval, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, subMonths, subWeeks, subDays as subDaysDateFns } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { TrendingUp, TrendingDown, Package, Percent, DollarSign, Calendar, Filter, Truck, Ban, Megaphone, Activity, AlertTriangle, ArrowRight, ChevronDown, X, Search, LayoutGrid, List, ChevronLeft, ChevronRight, Layers, Tag, SlidersHorizontal, Boxes } from 'lucide-react';
+import { TrendingUp, TrendingDown, Package, Percent, DollarSign, Calendar, Filter, Truck, Ban, Megaphone, Activity, AlertTriangle, ArrowRight, ChevronDown, X, Search, LayoutGrid, List, ChevronLeft, ChevronRight, Layers, Tag, SlidersHorizontal, Boxes, Banknote } from 'lucide-react';
 import { needsAction, getActionPriority } from '../../utils/orderUtils';
 import { AppSectionsCard } from '../layout/AppSectionsCard';
 
 export function Dashboard({ onViewChange }: { onViewChange?: (view: any) => void }) {
-  const {  orders, campaigns, campaignRecords, settings, inventoryProducts, globalProductFilter, setGlobalProductFilter , users } = useStore();
+  const { orders, campaigns, campaignRecords, settings, inventoryProducts, globalProductFilter, setGlobalProductFilter, users, expenses } = useStore();
   const [isAlertExpanded, setIsAlertExpanded] = useState(false);
   const [isSmartAlertDismissed, setIsSmartAlertDismissed] = useState(false);
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'custom'>(() => {
@@ -176,9 +177,43 @@ export function Dashboard({ onViewChange }: { onViewChange?: (view: any) => void
   }, [campaignRecords, start, end, compareStart, compareEnd, comparePeriod]);
 
   const totalAdSpend = filteredCampaigns.reduce((acc, curr) => acc + curr.spend, 0);
-  const netProfitAmount = deliveredSales - totalAdSpend;
+
+  const dashboardFinance = useMemo(() => {
+    return createFinanceCalculator(
+      orders,
+      expenses || [],
+      campaigns,
+      campaignRecords,
+      settings,
+      inventoryProducts,
+      dateFilter,
+      start,
+      end,
+      productFilter || 'all',
+      confirmerFilter || 'all'
+    );
+  }, [orders, expenses, campaigns, campaignRecords, settings, inventoryProducts, dateFilter, start, end, productFilter, confirmerFilter]);
+
+  const prevDashboardFinance = useMemo(() => {
+    if (!comparePeriod || !compareStart || !compareEnd) return null;
+    return createFinanceCalculator(
+      orders,
+      expenses || [],
+      campaigns,
+      campaignRecords,
+      settings,
+      inventoryProducts,
+      dateFilter,
+      compareStart,
+      compareEnd,
+      productFilter || 'all',
+      confirmerFilter || 'all'
+    );
+  }, [orders, expenses, campaigns, campaignRecords, settings, inventoryProducts, dateFilter, compareStart, compareEnd, productFilter, confirmerFilter, comparePeriod]);
+
+  const netProfitAmount = dashboardFinance.realNetProfit;
   const prevAdSpend = previousCampaigns.reduce((acc, curr) => acc + curr.spend, 0);
-  const prevNetProfit = prevDeliveredSales - prevAdSpend;
+  const prevNetProfit = prevDashboardFinance ? prevDashboardFinance.realNetProfit : 0;
 
   // Additional Campaign Metrics
   const costPerOrder = confirmedOrders > 0 ? totalAdSpend / confirmedOrders : 0;
@@ -731,10 +766,10 @@ export function Dashboard({ onViewChange }: { onViewChange?: (view: any) => void
           prevValue={comparePeriod && prevTotalSales !== undefined ? `${prevTotalSales.toLocaleString()} د.ج` : undefined}
         />
         <StatCard 
-          title="صافي الربح التقديري" 
+          title="صافي الأرباح الحقيقية" 
           value={`${netProfitAmount.toLocaleString()} د.ج`} 
-          icon={<TrendingUp className="w-5 h-5 text-blue-600" />}
-          subtext={`${deliveredSales.toLocaleString()} د.ج مبيعات موصلة`}
+          icon={<Banknote className="w-5 h-5 text-emerald-600" />}
+          subtext={`متوقع: ${dashboardFinance.expectedNetProfit.toLocaleString()} د.ج`}
           trend={calcTrend(netProfitAmount, prevNetProfit)?.value}
           trendUp={calcTrend(netProfitAmount, prevNetProfit)?.up}
           prevValue={comparePeriod && prevNetProfit !== undefined ? `${prevNetProfit.toLocaleString()} د.ج` : undefined}

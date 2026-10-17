@@ -783,10 +783,6 @@ export function OrdersList() {
         updates.shippingFeeMode = 'auto';
       }
 
-      if (lockedCogs > 0) {
-         updates.customProductCost = lockedCogs;
-      }
-
       await updateOrder(order.id, updates);
       playActionSound('success');
       toast.success(`تم تمرير الطلبية للشحن بنجاح! رقم التتبع: ${assignedTracking} | سعر الشحن: ${calculatedShippingFee || updates.realDeliveryPrice || 'افتراضي'} د.ج`);

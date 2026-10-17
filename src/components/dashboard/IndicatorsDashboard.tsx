@@ -1,19 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
 import { getEffectiveShippingCost } from '../../utils/shippingFees';
-import { checkProductMatch, isCampaignMatchedToProduct } from '../../utils/productFilters';
+import { checkProductMatch, isCampaignMatchedToProduct, renderProductFilterOptions } from '../../utils/productFilters';
 
 import { mapStatusToStatus2, getDeliveryDate, getReturnDate, getOrderCosts, calculateTotalCampaignSpend, createFinanceCalculator } from '../../utils/financeCalculations';
 
-import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO, differenceInDays } from 'date-fns';
+import { format, isWithinInterval, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO, differenceInDays, subDays } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { 
   TrendingUp, TrendingDown, DollarSign, Activity, Package, Percent, Target, 
   Truck, Megaphone, Banknote, Calendar, PieChart as PieChartIcon,
   Coins, AlertTriangle, ArrowUpDown, Search, Sparkles, ShieldAlert, 
   CheckCircle2, Layers, HelpCircle, Info, Zap, ArrowUpRight, ArrowDownRight,
-  Filter, X
+  Filter, X, ShoppingBag
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, 
@@ -30,13 +30,22 @@ export function IndicatorsDashboard() {
   const { 
     orders, campaigns, campaignRecords, inventoryProducts, 
     expenses, settings, campaignFields,
-    globalProductFilter
+    globalProductFilter, setGlobalProductFilter
   } = useStore();
 
-  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>(() => {
-    const saved = localStorage.getItem('indicators_dateFilter');
-    return (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'all') ? saved : 'month';
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all'>(() => {
+    const saved = localStorage.getItem('indicators_dateFilter') || localStorage.getItem('profit_dateFilter');
+    return (saved as any) || 'month';
   });
+  const [customStart, setCustomStart] = useState<string>(() => localStorage.getItem('indicators_customStart') || localStorage.getItem('profit_customStart') || '');
+  const [customEnd, setCustomEnd] = useState<string>(() => localStorage.getItem('indicators_customEnd') || localStorage.getItem('profit_customEnd') || '');
+  const [productFilter, setProductFilter] = useState<string>(() => globalProductFilter || localStorage.getItem('profit_productFilter') || 'all');
+
+  useEffect(() => {
+    if (globalProductFilter !== undefined) {
+      setProductFilter(prev => (prev === globalProductFilter ? prev : globalProductFilter));
+    }
+  }, [globalProductFilter]);
 
   // State for products analysis table
   const [productSearch, setProductSearch] = useState('');
@@ -46,20 +55,34 @@ export function IndicatorsDashboard() {
 
   React.useEffect(() => {
     localStorage.setItem('indicators_dateFilter', dateFilter);
-  }, [dateFilter]);
+    localStorage.setItem('profit_dateFilter', dateFilter);
+    localStorage.setItem('indicators_customStart', customStart);
+    localStorage.setItem('profit_customStart', customStart);
+    localStorage.setItem('indicators_customEnd', customEnd);
+    localStorage.setItem('profit_customEnd', customEnd);
+    localStorage.setItem('profit_productFilter', productFilter);
+  }, [dateFilter, customStart, customEnd, productFilter]);
 
   // Time periods
   const now = new Date();
   const periods = useMemo(() => {
     return {
       today: { start: startOfDay(now), end: endOfDay(now) },
+      yesterday: { 
+        start: startOfDay(subDays(now, 1)), 
+        end: endOfDay(subDays(now, 1)) 
+      },
       week: { start: startOfWeek(now, { weekStartsOn: 6 }), end: endOfWeek(now, { weekStartsOn: 6 }) },
-      month: { start: startOfMonth(now), end: endOfDay(now) }
+      month: { start: startOfMonth(now), end: endOfMonth(now) },
+      custom: {
+        start: customStart ? startOfDay(parseISO(customStart)) : startOfMonth(now),
+        end: customEnd ? endOfDay(parseISO(customEnd)) : endOfMonth(now)
+      }
     };
-  }, [now]);
+  }, [now, customStart, customEnd]);
 
   // Active Period
-  const activePeriod = dateFilter === 'all' ? null : periods[dateFilter];
+  const activePeriod = dateFilter === 'all' ? null : (periods[dateFilter as keyof typeof periods] || periods.month);
 
   // 1. Calculate Days since first order
   const daysSinceStart = useMemo(() => {
@@ -75,12 +98,15 @@ export function IndicatorsDashboard() {
     return diff > 0 ? diff : 1;
   }, [orders, now]);
 
+  const productFilterOptionsJSX = useMemo(() => {
+    return renderProductFilterOptions(inventoryProducts, orders);
+  }, [orders, inventoryProducts]);
+
   // 2. Finance Metrics Calculation Function
   const calculateFinance = (periodStart?: Date, periodEnd?: Date, forceAll: boolean = false) => {
-    const activeFilter = forceAll ? 'all' : dateFilter;
+    const activeFilter = forceAll ? 'all' : (periodStart && periodEnd && (periodStart !== activePeriod?.start || periodEnd !== activePeriod?.end) ? 'custom' : dateFilter);
     const pStart = periodStart || null;
     const pEnd = periodEnd || null;
-    const startParam = periods['month']?.start || null;
 
     const calc = createFinanceCalculator(
       orders,
@@ -92,9 +118,8 @@ export function IndicatorsDashboard() {
       activeFilter,
       pStart,
       pEnd,
-      globalProductFilter || 'all',
-      'all',
-      startParam
+      productFilter || globalProductFilter || 'all',
+      'all'
     );
 
     return { 
@@ -108,6 +133,7 @@ export function IndicatorsDashboard() {
         returnedCount: calc.returnedCount,
         returnCostTotal: calc.returnCostTotal || 0,
         adSpendDZD: calc.adSpendDZD || 0,
+        adSpendUSD: calc.adSpendUSD || 0,
         totalCosts: calc.totalCosts,
         realRev: calc.realRev
     };
@@ -129,10 +155,100 @@ export function IndicatorsDashboard() {
     ? (currentMetrics.returnCostTotal / currentMetrics.adSpendDZD) * 100 
     : 0;
 
+  // Active Exchange Rate and Ad Spend Intelligence Metrics
+  const exRate = settings?.exchangeRate || 245;
+  const adSpendDZD = currentMetrics.adSpendDZD || 0;
+  const adSpendUSD = currentMetrics.adSpendUSD > 0 
+    ? currentMetrics.adSpendUSD 
+    : (exRate > 0 ? adSpendDZD / exRate : 0);
+
+  // ACOS: Ad spend percentage of delivered revenue
+  const adSpendPercentageOfRev = currentMetrics.realRev > 0 
+    ? (adSpendDZD / currentMetrics.realRev) * 100 
+    : 0;
+
+  // Real Delivered CPA (Cost per delivered order)
+  const cpaRealDelivered = currentMetrics.realCount > 0 
+    ? (adSpendDZD / currentMetrics.realCount) 
+    : 0;
+
+  // All active orders CPA (delivered + expected)
+  const totalActiveOrders = (currentMetrics.realCount || 0) + (currentMetrics.expectedCount || 0);
+  const cpaAllOrders = totalActiveOrders > 0 
+    ? (adSpendDZD / totalActiveOrders) 
+    : 0;
+
+  // Period Days count for accurate daily average
+  const periodDaysCount = useMemo(() => {
+    if (dateFilter === 'today' || dateFilter === 'yesterday') return 1;
+    if (dateFilter === 'week') return 7;
+    if (dateFilter === 'month') {
+      const d = new Date();
+      return Math.max(1, d.getDate());
+    }
+    if (dateFilter === 'custom' && customStart && customEnd) {
+      try {
+        const diff = differenceInDays(parseISO(customEnd), parseISO(customStart)) + 1;
+        return diff > 0 ? diff : 1;
+      } catch {
+        return 1;
+      }
+    }
+    return daysSinceStart > 0 ? daysSinceStart : 1;
+  }, [dateFilter, customStart, customEnd, daysSinceStart]);
+
+  const dailyAverageAdSpend = periodDaysCount > 0 ? adSpendDZD / periodDaysCount : adSpendDZD;
+
+  const matchedCampaignsCount = useMemo(() => {
+    const activeProd = productFilter || globalProductFilter || 'all';
+    return campaigns.filter(c => !c.isArchived && (activeProd === 'all' || isCampaignMatchedToProduct(c, activeProd, inventoryProducts))).length;
+  }, [campaigns, productFilter, globalProductFilter, inventoryProducts]);
+
+  const activeProductDisplayName = useMemo(() => {
+    const activeProd = productFilter || globalProductFilter;
+    if (!activeProd || activeProd === 'all') return 'الجميع (كافة المنتجات)';
+    const cleanKey = activeProd.replace(/^[PVC]::/, '');
+    const found = inventoryProducts.find(p => 
+      p.id === activeProd || 
+      p.sku === activeProd || 
+      p.name === activeProd ||
+      p.id === cleanKey || 
+      p.sku === cleanKey || 
+      p.name === cleanKey ||
+      `P::${p.sku}` === activeProd ||
+      `P::${p.id}` === activeProd
+    );
+    if (found) return found.name;
+    for (const p of inventoryProducts) {
+      const v = p.variations?.find((x: any) => 
+        x.sku === activeProd || 
+        x.id === activeProd || 
+        x.sku === cleanKey || 
+        x.id === cleanKey ||
+        `V::${x.sku}` === activeProd
+      );
+      if (v) return `${p.name} (${v.name || v.sku || 'موديل'})`;
+    }
+    return cleanKey;
+  }, [productFilter, globalProductFilter, inventoryProducts]);
+
+  const activeDateFilterLabel = useMemo(() => {
+    switch (dateFilter) {
+      case 'today': return 'اليوم';
+      case 'yesterday': return 'الأمس';
+      case 'week': return 'هذا الأسبوع';
+      case 'month': return 'هذا الشهر';
+      case 'custom': return customStart && customEnd ? `من ${customStart} إلى ${customEnd}` : 'فترة مخصصة';
+      case 'all': return 'كامل الفترة';
+      default: return 'الفترة المحددة';
+    }
+  }, [dateFilter, customStart, customEnd]);
+
   // 3. Shipped Orders Stats
   const shippedOrdersStats = useMemo(() => {
+    const activeProd = productFilter || globalProductFilter;
     const filtered = orders.filter(o => {
-      if (globalProductFilter && globalProductFilter !== 'all' && !checkProductMatch(o, globalProductFilter, inventoryProducts)) return false;
+      if (activeProd && activeProd !== 'all' && !checkProductMatch(o, activeProd, inventoryProducts)) return false;
       if (!o.orderDate) return false;
       if (activePeriod) {
         return isWithinInterval(parseISO(o.orderDate), { start: activePeriod.start, end: activePeriod.end });
@@ -152,7 +268,7 @@ export function IndicatorsDashboard() {
       confirmedPct: totalReceived > 0 ? (confirmed / totalReceived) * 100 : 0,
       pendingPct: totalReceived > 0 ? (pending > 0 ? pending / totalReceived : 0) * 100 : 0
     };
-  }, [orders, activePeriod, globalProductFilter, inventoryProducts]);
+  }, [orders, activePeriod, productFilter, globalProductFilter, inventoryProducts]);
 
   const funnelData = [
     { name: 'مستلمة', value: shippedOrdersStats.totalReceived, color: '#9ca3af' },
@@ -178,7 +294,7 @@ export function IndicatorsDashboard() {
       });
     }
     return days;
-  }, [orders, expenses, campaignRecords, settings, globalProductFilter, inventoryProducts]);
+  }, [orders, expenses, campaignRecords, settings, productFilter, globalProductFilter, inventoryProducts]);
 
   // 4. Products Analysis: Return Cost vs Ad Spend & Profit ROAS Breakdown
   const productsPerformanceList = useMemo(() => {
@@ -211,8 +327,18 @@ export function IndicatorsDashboard() {
     });
 
     let list = Array.from(pMap.values());
-    if (globalProductFilter && globalProductFilter !== 'all') {
-      list = list.filter(p => p.id === globalProductFilter || p.sku === globalProductFilter || p.name === globalProductFilter);
+    const activeProd = productFilter || globalProductFilter || 'all';
+    if (activeProd && activeProd !== 'all') {
+      let rawKey = activeProd;
+      if (rawKey.startsWith('P::') || rawKey.startsWith('V::') || rawKey.startsWith('C::')) {
+        rawKey = rawKey.substring(3).trim();
+      }
+      const normKey = rawKey.toLowerCase();
+      list = list.filter(p => 
+        (p.id && String(p.id).toLowerCase() === normKey) ||
+        (p.sku && String(p.sku).toLowerCase() === normKey) ||
+        (p.name && String(p.name).toLowerCase() === normKey)
+      );
     }
 
     return list.map(prod => {
@@ -290,7 +416,7 @@ export function IndicatorsDashboard() {
         status
       };
     }).filter(p => p.adSpend > 0 || p.realRev > 0 || p.returnedCount > 0 || p.realCount > 0);
-  }, [inventoryProducts, orders, campaigns, campaignRecords, settings, expenses, dateFilter, activePeriod, globalProductFilter, periods]);
+  }, [inventoryProducts, orders, campaigns, campaignRecords, settings, expenses, dateFilter, activePeriod, productFilter, globalProductFilter, periods]);
 
   // Filtered & Sorted Products List
   const filteredAndSortedProducts = useMemo(() => {
@@ -348,9 +474,10 @@ export function IndicatorsDashboard() {
 
   // 5. Active Campaigns Cost
   const activeCampaignsData = useMemo(() => {
-    const active = campaigns.filter(c => !c.isArchived && (!(globalProductFilter && globalProductFilter !== 'all') || isCampaignMatchedToProduct(c, globalProductFilter, inventoryProducts)));
+    const activeProd = productFilter || globalProductFilter || 'all';
+    const active = campaigns.filter(c => !c.isArchived && (activeProd === 'all' || isCampaignMatchedToProduct(c, activeProd, inventoryProducts)));
     const purchasesField = campaignFields.find(f => f.name.toLowerCase() === 'purchases');
-    const exchangeRate = settings?.exchangeRate || 220;
+    const exchangeRate = settings?.exchangeRate || 245;
 
     return active.map(c => {
       const records = campaignRecords.filter(r => r.campaignId === c.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -390,7 +517,7 @@ export function IndicatorsDashboard() {
         cpa
       };
     }).sort((a, b) => b.spend - a.spend);
-  }, [campaigns, campaignRecords, settings, inventoryProducts, activePeriod, campaignFields]);
+  }, [campaigns, campaignRecords, settings, inventoryProducts, activePeriod, campaignFields, productFilter, globalProductFilter]);
 
   return (
     <div className="p-4 md:p-8 space-y-8 bg-gray-50/50 min-h-screen" dir="rtl">
@@ -409,26 +536,107 @@ export function IndicatorsDashboard() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* Quick "الجميع" (All Products) Button */}
+          <button
+            onClick={() => {
+              setProductFilter('all');
+              if (setGlobalProductFilter) setGlobalProductFilter('all');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-2xs cursor-pointer ${
+              !productFilter || productFilter === 'all'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-100'
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200'
+            }`}
+            title="عرض مؤشرات جميع المنتجات دون استثناء (الجميع)"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>الجميع</span>
+          </button>
+
+          {/* Product Filter Selector */}
+          <div className="flex items-center gap-1.5 bg-white rounded-xl shadow-xs border border-gray-200 px-3 py-1.5">
+            <Package className="w-4 h-4 text-indigo-600 shrink-0" />
+            <select
+              value={productFilter || 'all'}
+              onChange={(e) => {
+                const val = e.target.value;
+                setProductFilter(val);
+                if (setGlobalProductFilter) setGlobalProductFilter(val);
+              }}
+              className="bg-transparent border-0 text-xs font-bold text-gray-700 focus:ring-0 cursor-pointer max-w-[200px] truncate"
+              title="فلترة مؤشرات الأداء حسب المنتج"
+            >
+              <option value="all">الجميع (كافة المنتجات)</option>
+              <option value="all">الجميع</option>
+              {productFilterOptionsJSX}
+            </select>
+            {productFilter && productFilter !== 'all' && (
+              <button
+                onClick={() => {
+                  setProductFilter('all');
+                  if (setGlobalProductFilter) setGlobalProductFilter('all');
+                }}
+                className="p-1 text-gray-400 hover:text-rose-600 rounded-md hover:bg-gray-100 transition-colors flex items-center gap-1 cursor-pointer"
+                title="إلغاء الفلترة والرجوع لخيار الجميع"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-bold text-rose-600">الجميع</span>
+              </button>
+            )}
+          </div>
+
           <button
             onClick={() => setShowInfoModal(true)}
-            className="px-4 py-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors"
+            className="px-3 py-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors"
             title="دليل فهم مؤشرات ROAS والروتورن"
           >
             <HelpCircle className="w-4 h-4" />
             <span>شرح المؤشرات</span>
           </button>
-          <div className="flex bg-white rounded-xl shadow-sm border border-gray-200 p-1 flex-1 md:flex-initial">
-            {['today', 'week', 'month', 'all'].map((f) => (
+
+          {/* Date Filter Pills */}
+          <div className="flex bg-white rounded-xl shadow-xs border border-gray-200 p-1 flex-wrap">
+            {[
+              { id: 'today', label: 'اليوم' },
+              { id: 'yesterday', label: 'الأمس' },
+              { id: 'week', label: 'الأسبوع' },
+              { id: 'month', label: 'الشهر' },
+              { id: 'custom', label: 'مخصص' },
+              { id: 'all', label: 'الكل' }
+            ].map(({ id, label }) => (
               <button
-                key={f}
-                onClick={() => setDateFilter(f as any)}
-                className={`flex-1 md:flex-initial px-5 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${dateFilter === f ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+                key={id}
+                onClick={() => setDateFilter(id as any)}
+                className={`px-3.5 py-1.5 rounded-lg font-bold text-xs transition-all ${
+                  dateFilter === id 
+                    ? 'bg-indigo-600 text-white shadow-sm' 
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
               >
-                {f === 'today' ? 'اليوم' : f === 'week' ? 'الأسبوع' : f === 'month' ? 'الشهر' : 'الكل'}
+                {label}
               </button>
             ))}
           </div>
+
+          {/* Custom Date Pickers */}
+          {dateFilter === 'custom' && (
+            <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-gray-200 shadow-xs">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="text-xs font-bold text-gray-700 px-2 py-1 rounded-lg border-0 bg-gray-50 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+              />
+              <span className="text-gray-400 text-xs font-bold">إلى</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="text-xs font-bold text-gray-700 px-2 py-1 rounded-lg border-0 bg-gray-50 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -455,6 +663,92 @@ export function IndicatorsDashboard() {
           gradient="from-indigo-500 to-purple-700"
           subtitle="مجموع الأرباح المحصلة والمتوقعة"
         />
+      </div>
+
+      {/* Row 1.25: Complete Advertising Spend Cards (خاضع للفلاتر الزمنية والمنتجات) */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 shadow-2xs">
+              <Megaphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                بطاقات المصروف الإعلاني الكامل
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                  خاضع للفلاتر الزمنية والمنتجات
+                </span>
+              </h3>
+              <p className="text-xs text-gray-500 font-medium">
+                تتبع الإنفاق الإعلاني الشامل بدقة للفترة: <strong className="text-gray-800 font-bold">{activeDateFilterLabel}</strong> | المنتج: <strong className="text-indigo-700 font-bold">{activeProductDisplayName}</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-600 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs self-start sm:self-auto">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>سعر الصرف المعتمد: <strong className="text-gray-900 font-black">{exRate} د.ج / $</strong></span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {/* Card 1: Total Ad Spend in DZD */}
+          <AdSpendCard 
+            title="المصروف الإعلاني الكامل (د.ج)" 
+            value={adSpendDZD}
+            unit="د.ج"
+            isCurrency
+            subtitle="إجمالي الإنفاق الإعلاني بالدينار الجزائري"
+            badge={matchedCampaignsCount > 0 ? `${matchedCampaignsCount} حملة مطابقة` : 'لا توجد حملات'}
+            icon={<Megaphone className="w-5 h-5 text-white" />}
+            gradient="from-rose-500 via-rose-600 to-red-700"
+          />
+
+          {/* Card 2: Total Ad Spend in USD */}
+          <AdSpendCard 
+            title="المصروف الإعلاني بالدولار ($ USD)" 
+            value={adSpendUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            prefix="$"
+            unit="USD"
+            subtitle="المصروف المستهلك على منصات الإعلانات"
+            badge={`${exRate} د.ج / 1$`}
+            icon={<DollarSign className="w-5 h-5 text-white" />}
+            gradient="from-blue-600 via-indigo-600 to-indigo-800"
+          />
+
+          {/* Card 3: Daily Average Ad Spend */}
+          <AdSpendCard 
+            title="متوسط الصرف الإعلاني اليومي" 
+            value={dailyAverageAdSpend}
+            unit="د.ج / يوم"
+            isCurrency
+            subtitle={`معدل الإنفاق اليومي (${periodDaysCount} ${periodDaysCount === 1 ? 'يوم' : 'أيام'})`}
+            badge={exRate > 0 ? `≈ $${(dailyAverageAdSpend / exRate).toFixed(1)} / يوم` : undefined}
+            icon={<Calendar className="w-5 h-5 text-white" />}
+            gradient="from-amber-500 via-orange-500 to-amber-700"
+          />
+
+          {/* Card 4: Ad Cost per Delivered Order (CPA) */}
+          <AdSpendCard 
+            title="تكلفة الإعلان لكل طلبية مستلمة (CPA)" 
+            value={cpaRealDelivered}
+            unit="د.ج"
+            isCurrency
+            subtitle="المصروف الإعلاني الفعلي المحمّل على كل طرد مستلم"
+            badge={currentMetrics.realCount > 0 ? `${currentMetrics.realCount} طلبية مستلمة` : 'لا توجد مستلمة'}
+            icon={<Target className="w-5 h-5 text-white" />}
+            gradient="from-teal-600 via-emerald-600 to-teal-800"
+          />
+
+          {/* Card 5: Ad Spend % of Delivered Revenue */}
+          <AdSpendCard 
+            title="نسبة الإعلانات من المداخيل (ACOS)" 
+            value={`${adSpendPercentageOfRev.toFixed(1)}%`}
+            subtitle="حصة الميزانية الإعلانية من إجمالي المبيعات المحصلة"
+            badge={currentMetrics.realRev > 0 ? `المبيعات: ${formatCurrency(currentMetrics.realRev)} د.ج` : 'بدون مبيعات'}
+            icon={<Percent className="w-5 h-5 text-white" />}
+            gradient="from-purple-600 via-purple-700 to-indigo-900"
+          />
+        </div>
       </div>
 
       {/* Row 1.5: Rates & Core Advertising / Return KPIs */}
@@ -1156,6 +1450,71 @@ export function IndicatorsDashboard() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface AdSpendCardProps {
+  title: string;
+  value: string | number;
+  unit?: string;
+  subtitle: string;
+  badge?: string;
+  icon: React.ReactNode;
+  gradient: string;
+  isCurrency?: boolean;
+  prefix?: string;
+}
+
+function AdSpendCard({
+  title,
+  value,
+  unit,
+  subtitle,
+  badge,
+  icon,
+  gradient,
+  isCurrency = false,
+  prefix
+}: AdSpendCardProps) {
+  const displayValue = isCurrency && typeof value === 'number' 
+    ? formatCurrency(value) 
+    : value;
+
+  return (
+    <div className={`p-5 rounded-3xl bg-gradient-to-br ${gradient} shadow-lg relative overflow-hidden text-white flex flex-col justify-between hover:shadow-xl transition-all duration-200 border border-white/10 group`}>
+      {/* Background ambient glow circle */}
+      <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none group-hover:scale-125 transition-transform" />
+      
+      <div>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <span className="text-white/95 font-bold text-xs tracking-wide">{title}</span>
+          <div className="p-2.5 bg-white/20 backdrop-blur-md rounded-2xl border border-white/25 shrink-0 shadow-xs">
+            {icon}
+          </div>
+        </div>
+
+        <div className="flex items-baseline gap-1.5 my-1" dir="ltr">
+          {prefix && <span className="text-2xl font-bold opacity-90">{prefix}</span>}
+          <span className="text-3xl font-black text-white tracking-tight drop-shadow-xs">
+            {displayValue}
+          </span>
+          {unit && <span className="text-xs font-bold opacity-85">{unit}</span>}
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-white/15 flex flex-col gap-1.5">
+        <div className="text-white/85 text-[11px] font-medium leading-relaxed">
+          {subtitle}
+        </div>
+        {badge && (
+          <div className="self-start">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-black/20 text-white border border-white/20 backdrop-blur-xs">
+              {badge}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

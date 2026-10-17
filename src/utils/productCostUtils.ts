@@ -35,6 +35,7 @@ export const cleanSku = (sku: any): string => {
 
 /**
  * Extracts all distinct SKUs from an order or order item.
+ * Includes full raw SKUs, cleaned alphanumeric SKUs, and sub-tokens from compound SKUs.
  */
 export const extractOrderSkus = (orderOrSku: any): string[] => {
   if (!orderOrSku) return [];
@@ -48,29 +49,52 @@ export const extractOrderSkus = (orderOrSku: any): string[] => {
     if (orderOrSku.variation_sku) rawSkus.push(String(orderOrSku.variation_sku));
     if (orderOrSku.product_sku) rawSkus.push(String(orderOrSku.product_sku));
     if (orderOrSku.itemSku) rawSkus.push(String(orderOrSku.itemSku));
+    if (orderOrSku.customSku) rawSkus.push(String(orderOrSku.customSku));
     
-    // Check line items if available
-    if (Array.isArray(orderOrSku.items)) {
-      orderOrSku.items.forEach((item: any) => {
+    // Check line items if available across all array names
+    const itemsList = orderOrSku.items || orderOrSku.products || orderOrSku.line_items || orderOrSku.cart || orderOrSku.orderedItems;
+    if (Array.isArray(itemsList)) {
+      itemsList.forEach((item: any) => {
         if (item.sku) rawSkus.push(String(item.sku));
         if (item.variation_sku) rawSkus.push(String(item.variation_sku));
+        if (item.product_sku) rawSkus.push(String(item.product_sku));
       });
     }
   }
 
   const result = new Set<string>();
   rawSkus.forEach((raw) => {
-    // Split by comma, semicolon, pipe, slash, plus, or newline
+    // 1. Split compound list delimiters: comma, semicolon, pipe, slash, plus, newline
     String(raw)
       .split(/[,;|\n\/+]+/)
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
       .forEach((s) => {
         result.add(s);
-        // Also add the cleaned version if different
         const cleaned = cleanSku(s);
-        if (cleaned && cleaned !== s) {
-          result.add(cleaned);
+        if (cleaned) result.add(cleaned);
+
+        // 2. Also split by hyphen or underscore or space to extract model / sub-SKU tokens
+        // E.g. "ABC-RED" -> "abc", "red"; "PROD_02" -> "prod", "02"
+        const subParts = s.split(/[-_: ]+/).map(p => p.trim().toLowerCase()).filter(p => p.length > 0);
+        if (subParts.length > 1) {
+          subParts.forEach(sp => {
+            result.add(sp);
+            const cleanSp = cleanSku(sp);
+            if (cleanSp) result.add(cleanSp);
+          });
+          const prefix = subParts.slice(0, -1).join('-');
+          const suffix = subParts[subParts.length - 1];
+          if (prefix) {
+            result.add(prefix);
+            const cp = cleanSku(prefix);
+            if (cp) result.add(cp);
+          }
+          if (suffix) {
+            result.add(suffix);
+            const cs = cleanSku(suffix);
+            if (cs) result.add(cs);
+          }
         }
       });
   });
@@ -300,9 +324,35 @@ export const matchVariationWithinProduct = (
   };
 
   // =========================================================================
+  // PRIORITY 0: Exact / Cleaned / Suffix Variation SKU Match (Highest Priority)
+  // When specific SKUs are provided from the order, SKU matching definitively
+  // determines the product variant/model!
+  // =========================================================================
+  if (Array.isArray(specificSkus) && specificSkus.length > 0) {
+    for (const s of specificSkus) {
+      const sNorm = (s || '').trim().toLowerCase();
+      const sClean = cleanSku(s);
+      if (!sNorm && !sClean) continue;
+      const found = variations.find((v: any) => {
+        const vSku = (v.sku || '').trim().toLowerCase();
+        const vLocalSku = (v.local_sku || '').trim().toLowerCase();
+        const vClean = cleanSku(v.sku || v.local_sku);
+        if (!vSku && !vLocalSku && !vClean) return false;
+
+        return (
+          (vSku && (vSku === sNorm || vSku === sClean)) ||
+          (vLocalSku && (vLocalSku === sNorm || vLocalSku === sClean)) ||
+          (vClean && (vClean === sClean || vClean === sNorm)) ||
+          (sNorm.includes('-') && (sNorm.endsWith(`-${vSku}`) || sNorm.startsWith(`${vSku}-`))) ||
+          (sNorm.includes('_') && (sNorm.endsWith(`_${vSku}`) || sNorm.startsWith(`${vSku}_`)))
+        );
+      });
+      if (found) return found;
+    }
+  }
+
+  // =========================================================================
   // PRIORITY 1: Explicit Variation / Type Numbers & Arabic / English Ordinals
-  // This is the absolute highest priority: prevents any generic token or alias
-  // from hijacking a customer's specific type selection (e.g. "النوع 2", "نوع 1")!
   // =========================================================================
   let requestedTypeNumber: number | null = null;
 
@@ -538,78 +588,49 @@ export const findInventoryProductAndVariation = (
   const orderProductId = order.productId || order.product_id || order.id;
   const orderVariationId = order.variationId || order.variation_id;
 
-  // --------------------------------------------------------------------------
-  // 1. Check if any order SKU matches a VARIATION SKU directly across all inventory products
-  // --------------------------------------------------------------------------
-  if (orderSkus.length > 0) {
-    for (const prod of inventoryProducts) {
-      if (Array.isArray(prod.variations)) {
-        for (const v of prod.variations) {
-          const vSku = (v.sku || v.local_sku || '').trim().toLowerCase();
-          const vSkuClean = cleanSku(v.sku || v.local_sku);
-
-          if (
-            (vSku && orderSkus.includes(vSku)) ||
-            (vSkuClean && orderSkus.includes(vSkuClean))
-          ) {
-            // Check if order has a specific variation name that points to a DIFFERENT variation in the same product
-            let finalVar = v;
-            if (prod.variations.length > 1) {
-              const varSearchText = (order.variation || order.variationName || '').trim() || rawOrderProductName;
-              if (varSearchText) {
-                const betterMatch = matchVariationWithinProduct(prod.variations, varSearchText, []);
-                if (betterMatch) {
-                  finalVar = betterMatch;
-                }
-              }
-            }
-
-            const isOfferFallback = prod.variations.some((x: any) =>
-              x.attributes?.some((a: any) => a.option && (a.option.includes('عرض') || a.option.includes('كمية') || a.option.includes('pack')))
-            );
-            const isOffer = prod.local_is_offers !== undefined ? prod.local_is_offers : isOfferFallback;
-            
-            let offerMultiplier = finalVar.offer_quantity || 1;
-            if (offerMultiplier === 1) {
-              const varText = (finalVar.name || '') + ' ' + (finalVar.attributes?.map((a: any) => a.option).join(' ') || '');
-              offerMultiplier = extractOfferMultiplier(varText);
-            }
-
-            return {
-              product: prod,
-              variation: finalVar,
-              matchType: 'variation_sku',
-              recognizedSku: finalVar.sku || finalVar.local_sku || prod.sku,
-              isOffer,
-              offerMultiplier
-            };
-          }
-        }
-      }
-    }
-  }
+  // Extract primary order SKUs without sub-tokens
+  const rawOrderSku = String(order.sku || '').trim().toLowerCase();
+  const rawVarSku = String(order.variation_sku || '').trim().toLowerCase();
+  const rawProdSku = String(order.product_sku || '').trim().toLowerCase();
+  const primarySkus = [rawVarSku, rawOrderSku, rawProdSku].filter(Boolean);
+  const primaryCleanSkus = primarySkus.map(cleanSku).filter(Boolean);
 
   // --------------------------------------------------------------------------
-  // 2. Check if any order SKU matches a MAIN PRODUCT SKU across all inventory products
+  // 1. Check if any order SKU matches a MAIN PRODUCT SKU across all inventory products
+  // When product SKU matches, find the exact variation within this product!
   // --------------------------------------------------------------------------
   if (orderSkus.length > 0) {
     for (const prod of inventoryProducts) {
-      const pSku = (prod.sku || '').trim().toLowerCase();
-      const pSkuClean = cleanSku(prod.sku);
+      const pSku = (prod.sku || prod.local_sku || '').trim().toLowerCase();
+      const pSkuClean = cleanSku(prod.sku || prod.local_sku);
+      if (!pSku && !pSkuClean) continue;
 
-      if (
+      const isExactProdSkuMatch =
+        primarySkus.includes(pSku) ||
+        primaryCleanSkus.includes(pSkuClean) ||
         (pSku && orderSkus.includes(pSku)) ||
-        (pSkuClean && orderSkus.includes(pSkuClean))
-      ) {
-        // Try to find the specific variation if order has variation info
+        (pSkuClean && orderSkus.includes(pSkuClean));
+
+      const isPrefixProdSkuMatch =
+        rawOrderSku &&
+        (rawOrderSku.startsWith(`${pSku}-`) ||
+         rawOrderSku.startsWith(`${pSku}_`) ||
+         rawOrderSku.startsWith(`${pSku} `) ||
+         (pSkuClean && cleanSku(rawOrderSku).startsWith(pSkuClean)));
+
+      if (isExactProdSkuMatch || isPrefixProdSkuMatch) {
+        // Try to find the specific variation within THIS product
         let matchedVar: any = null;
         if (Array.isArray(prod.variations) && prod.variations.length > 0) {
           const varSearchText = (order.variation || order.variationName || '').trim();
-          if (varSearchText) {
-            matchedVar = matchVariationWithinProduct(prod.variations, varSearchText, []);
-          }
+          // Priority A: Try to match variation by SKU within this product
+          matchedVar = matchVariationWithinProduct(prod.variations, varSearchText, [rawVarSku, rawOrderSku, ...orderSkus].filter(Boolean));
+
           if (!matchedVar && rawOrderProductName) {
-            matchedVar = matchVariationWithinProduct(prod.variations, rawOrderProductName, []);
+            matchedVar = matchVariationWithinProduct(prod.variations, rawOrderProductName, [rawVarSku, rawOrderSku, ...orderSkus].filter(Boolean));
+          }
+          if (!matchedVar && prod.variations.length === 1) {
+            matchedVar = prod.variations[0];
           }
         }
 
@@ -627,6 +648,97 @@ export const findInventoryProductAndVariation = (
           isOffer,
           offerMultiplier
         };
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 2. Direct Variation SKU match: Check if full raw SKU strictly matches a VARIATION SKU
+  // --------------------------------------------------------------------------
+  if (primarySkus.length > 0) {
+    for (const prod of inventoryProducts) {
+      if (Array.isArray(prod.variations) && prod.variations.length > 0) {
+        for (const v of prod.variations) {
+          const vSku = (v.sku || '').trim().toLowerCase();
+          const vLocalSku = (v.local_sku || '').trim().toLowerCase();
+          const vSkuClean = cleanSku(v.sku || v.local_sku);
+
+          const isDirectMatch =
+            (vSku && primarySkus.includes(vSku)) ||
+            (vLocalSku && primarySkus.includes(vLocalSku)) ||
+            (vSkuClean && primaryCleanSkus.includes(vSkuClean));
+
+          if (isDirectMatch) {
+            const isOfferFallback = prod.variations.some((x: any) =>
+              x.attributes?.some((a: any) => a.option && (a.option.includes('عرض') || a.option.includes('كمية') || a.option.includes('pack')))
+            );
+            const isOffer = prod.local_is_offers !== undefined ? prod.local_is_offers : isOfferFallback;
+            
+            let offerMultiplier = v.offer_quantity || 1;
+            if (offerMultiplier === 1) {
+              const varText = (v.name || '') + ' ' + (v.attributes?.map((a: any) => a.option).join(' ') || '');
+              offerMultiplier = extractOfferMultiplier(varText);
+            }
+
+            return {
+              product: prod,
+              variation: v,
+              matchType: 'variation_sku',
+              recognizedSku: v.sku || v.local_sku || prod.sku,
+              isOffer,
+              offerMultiplier
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 3. Compound / Suffix / Prefix variation SKU match across inventory
+  // --------------------------------------------------------------------------
+  if (orderSkus.length > 0) {
+    for (const prod of inventoryProducts) {
+      if (Array.isArray(prod.variations) && prod.variations.length > 0) {
+        const pSkuClean = cleanSku(prod.sku || prod.local_sku);
+        for (const v of prod.variations) {
+          const vSku = (v.sku || v.local_sku || '').trim().toLowerCase();
+          const vSkuClean = cleanSku(v.sku || v.local_sku);
+          if (!vSkuClean) continue;
+
+          for (const s of orderSkus) {
+            const sClean = cleanSku(s);
+            if (!sClean) continue;
+
+            const isCompositeMatch =
+              (pSkuClean && sClean === `${pSkuClean}${vSkuClean}`) ||
+              (pSkuClean && vSkuClean === `${pSkuClean}${sClean}`) ||
+              (s.includes('-') && (s.endsWith(`-${vSku}`) || s.startsWith(`${vSku}-`))) ||
+              (s.includes('_') && (s.endsWith(`_${vSku}`) || s.startsWith(`${vSku}_`)));
+
+            if (isCompositeMatch) {
+              const isOfferFallback = prod.variations.some((x: any) =>
+                x.attributes?.some((a: any) => a.option && (a.option.includes('عرض') || a.option.includes('كمية') || a.option.includes('pack')))
+              );
+              const isOffer = prod.local_is_offers !== undefined ? prod.local_is_offers : isOfferFallback;
+              
+              let offerMultiplier = v.offer_quantity || 1;
+              if (offerMultiplier === 1) {
+                const varText = (v.name || '') + ' ' + (v.attributes?.map((a: any) => a.option).join(' ') || '');
+                offerMultiplier = extractOfferMultiplier(varText);
+              }
+
+              return {
+                product: prod,
+                variation: v,
+                matchType: 'variation_sku',
+                recognizedSku: v.sku || v.local_sku || prod.sku,
+                isOffer,
+                offerMultiplier
+              };
+            }
+          }
+        }
       }
     }
   }
@@ -1133,63 +1245,65 @@ export const extractOrderSubItems = (
     }
   }
 
-  // 3. Check if order.variation has compound variations
-  const vParts = splitCompoundVariationString(rawVar);
-  if (vParts.length > 1) {
-    const skuParts = rawSku ? rawSku.split(/[,;\+]+/).map(s => s.trim()).filter(Boolean) : [];
-    let candP = findProductForOrder(rawPName, rawSku, rawVar, order.productId || order.product_id);
-    if (!candP && inventoryProducts.length > 0) {
-      const pNorm = normalizeText(rawPName);
-      candP = inventoryProducts.find(p => {
-        const nameNorm = normalizeText(p.name);
-        return nameNorm && (pNorm.includes(nameNorm) || nameNorm.includes(pNorm));
-      }) || null;
+  // 3. Check if order.variation has compound variations (ONLY if orderQty > 1 or explicit bundle)
+  if (orderQty > 1) {
+    const vParts = splitCompoundVariationString(rawVar);
+    if (vParts.length > 1) {
+      const skuParts = rawSku ? rawSku.split(/[,;\+]+/).map(s => s.trim()).filter(Boolean) : [];
+      let candP = findProductForOrder(rawPName, rawSku, rawVar, order.productId || order.product_id);
+      if (!candP && inventoryProducts.length > 0) {
+        const pNorm = normalizeText(rawPName);
+        candP = inventoryProducts.find(p => {
+          const nameNorm = normalizeText(p.name);
+          return nameNorm && (pNorm.includes(nameNorm) || nameNorm.includes(pNorm));
+        }) || null;
+      }
+
+      return vParts.map((vp, idx) => {
+        let q = 1;
+        let cleanV = vp;
+        const leadMatch = vp.match(/^(\d+)\s*[*xX×]\s*(.+)$/);
+        if (leadMatch) {
+          q = parseInt(leadMatch[1], 10) || 1;
+          cleanV = leadMatch[2].trim();
+        } else {
+          const trailMatch = vp.match(/^(.+?)\s*[\(\[]\s*(\d+)\s*[\)\]]$/) || vp.match(/^(.+?)\s*[*xX×]\s*(\d+)$/);
+          if (trailMatch) {
+            q = parseInt(trailMatch[2], 10) || 1;
+            cleanV = trailMatch[1].trim();
+          }
+        }
+
+        let partCost: number | undefined = undefined;
+        let partSku = skuParts.length === vParts.length ? skuParts[idx] : '';
+
+        if (candP && Array.isArray(candP.variations) && candP.variations.length > 0) {
+          const matchedV = matchVariationWithinProduct(candP.variations, cleanV, partSku ? [partSku] : [], idx);
+          if (matchedV) {
+            const c = getProductCostValue(matchedV);
+            if (c > 0) partCost = c;
+            if (!partSku && (matchedV.sku || matchedV.local_sku)) {
+              partSku = matchedV.sku || matchedV.local_sku;
+            }
+          } else if (candP.variations.length > idx) {
+            const fallbackV = candP.variations[idx];
+            const c = getProductCostValue(fallbackV);
+            if (c > 0) partCost = c;
+            if (!partSku && (fallbackV.sku || fallbackV.local_sku)) {
+              partSku = fallbackV.sku || fallbackV.local_sku;
+            }
+          }
+        }
+
+        return {
+          name: candP?.name || rawPName,
+          variation: cleanV,
+          sku: partSku,
+          quantity: q,
+          cost: partCost
+        };
+      });
     }
-
-    return vParts.map((vp, idx) => {
-      let q = 1;
-      let cleanV = vp;
-      const leadMatch = vp.match(/^(\d+)\s*[*xX×]\s*(.+)$/);
-      if (leadMatch) {
-        q = parseInt(leadMatch[1], 10) || 1;
-        cleanV = leadMatch[2].trim();
-      } else {
-        const trailMatch = vp.match(/^(.+?)\s*[\(\[]\s*(\d+)\s*[\)\]]$/) || vp.match(/^(.+?)\s*[*xX×]\s*(\d+)$/);
-        if (trailMatch) {
-          q = parseInt(trailMatch[2], 10) || 1;
-          cleanV = trailMatch[1].trim();
-        }
-      }
-
-      let partCost: number | undefined = undefined;
-      let partSku = skuParts.length === vParts.length ? skuParts[idx] : '';
-
-      if (candP && Array.isArray(candP.variations) && candP.variations.length > 0) {
-        const matchedV = matchVariationWithinProduct(candP.variations, cleanV, partSku ? [partSku] : [], idx);
-        if (matchedV) {
-          const c = getProductCostValue(matchedV);
-          if (c > 0) partCost = c;
-          if (!partSku && (matchedV.sku || matchedV.local_sku)) {
-            partSku = matchedV.sku || matchedV.local_sku;
-          }
-        } else if (candP.variations.length > idx) {
-          const fallbackV = candP.variations[idx];
-          const c = getProductCostValue(fallbackV);
-          if (c > 0) partCost = c;
-          if (!partSku && (fallbackV.sku || fallbackV.local_sku)) {
-            partSku = fallbackV.sku || fallbackV.local_sku;
-          }
-        }
-      }
-
-      return {
-        name: candP?.name || rawPName,
-        variation: cleanV,
-        sku: partSku,
-        quantity: q,
-        cost: partCost
-      };
-    });
   }
 
   // 4. Check if order.sku has multiple distinct variation SKUs
@@ -1335,54 +1449,49 @@ export const getOrderUnitAndTotalCost = (
       let matchedP: InventoryProduct | null = null;
       let matchedV: any = null;
 
-      if (it.cost !== undefined && Number(it.cost) > 0) {
+      const match = findInventoryProductAndVariation(it, inventoryProducts);
+      matchedP = match.product;
+      matchedV = match.variation;
+
+      if (matchedP && Array.isArray(matchedP.variations) && !matchedV) {
+        matchedV = matchVariationWithinProduct(matchedP.variations, it.variation, extractOrderSkus(it), itIdx);
+      }
+
+      const vCost = matchedV ? getProductCostValue(matchedV) : 0;
+      const pCost = matchedP ? getProductCostValue(matchedP) : 0;
+
+      if (vCost > 0) {
+        itUnitCost = vCost;
+      } else if (pCost > 0) {
+        itUnitCost = pCost;
+      } else if (it.cost !== undefined && Number(it.cost) > 0) {
         itUnitCost = Number(it.cost);
-        const match = findInventoryProductAndVariation(it, inventoryProducts);
-        matchedP = match.product;
-        matchedV = match.variation;
-      } else {
-        const match = findInventoryProductAndVariation(it, inventoryProducts);
-        matchedP = match.product;
-        matchedV = match.variation;
+      } else if (matchedP && Array.isArray(matchedP.variations) && itIdx < matchedP.variations.length && getProductCostValue(matchedP.variations[itIdx]) > 0) {
+        matchedV = matchedP.variations[itIdx];
+        itUnitCost = getProductCostValue(matchedV);
+      } else if (matchedP && Array.isArray(matchedP.variations)) {
+        const sib = matchedP.variations.find((v: any) => getProductCostValue(v) > 0);
+        if (sib) itUnitCost = getProductCostValue(sib);
+      }
 
-        if (matchedP && Array.isArray(matchedP.variations) && !matchedV) {
-          matchedV = matchVariationWithinProduct(matchedP.variations, it.variation, extractOrderSkus(it), itIdx);
-        }
-
-        const vCost = matchedV ? getProductCostValue(matchedV) : 0;
-        const pCost = matchedP ? getProductCostValue(matchedP) : 0;
-
-        if (vCost > 0) {
-          itUnitCost = vCost;
-        } else if (matchedP && Array.isArray(matchedP.variations) && itIdx < matchedP.variations.length && getProductCostValue(matchedP.variations[itIdx]) > 0) {
-          matchedV = matchedP.variations[itIdx];
-          itUnitCost = getProductCostValue(matchedV);
-        } else if (pCost > 0) {
-          itUnitCost = pCost;
-        } else if (matchedP && Array.isArray(matchedP.variations)) {
-          const sib = matchedP.variations.find((v: any) => getProductCostValue(v) > 0);
-          if (sib) itUnitCost = getProductCostValue(sib);
-        }
-
-        if (itUnitCost === 0 && settings?.productCosts) {
-          const skus = extractOrderSkus(it);
-          for (const s of skus) {
-            if (settings.productCosts[s] !== undefined && Number(settings.productCosts[s]) > 0) {
-              itUnitCost = Number(settings.productCosts[s]);
-              break;
-            }
+      if (itUnitCost === 0 && settings?.productCosts) {
+        const skus = extractOrderSkus(it);
+        for (const s of skus) {
+          if (settings.productCosts[s] !== undefined && Number(settings.productCosts[s]) > 0) {
+            itUnitCost = Number(settings.productCosts[s]);
+            break;
           }
-          if (itUnitCost === 0 && it.variation) {
-            const normVar = normalizeText(it.variation);
-            if (settings.productCosts[normVar] !== undefined && Number(settings.productCosts[normVar]) > 0) {
-              itUnitCost = Number(settings.productCosts[normVar]);
-            }
+        }
+        if (itUnitCost === 0 && it.variation) {
+          const normVar = normalizeText(it.variation);
+          if (settings.productCosts[normVar] !== undefined && Number(settings.productCosts[normVar]) > 0) {
+            itUnitCost = Number(settings.productCosts[normVar]);
           }
-          if (itUnitCost === 0 && it.name) {
-            const normName = normalizeText(it.name);
-            if (settings.productCosts[normName] !== undefined && Number(settings.productCosts[normName]) > 0) {
-              itUnitCost = Number(settings.productCosts[normName]);
-            }
+        }
+        if (itUnitCost === 0 && it.name) {
+          const normName = normalizeText(it.name);
+          if (settings.productCosts[normName] !== undefined && Number(settings.productCosts[normName]) > 0) {
+            itUnitCost = Number(settings.productCosts[normName]);
           }
         }
       }
@@ -1417,8 +1526,21 @@ export const getOrderUnitAndTotalCost = (
     };
   }
 
-  // 2. Explicit manual custom cost override on this specific single-item order
+  // 2. Resolve single-item order from inventory by SKU
+  const match = findInventoryProductAndVariation(order, inventoryProducts);
+  const { product, variation, isOffer, offerMultiplier } = match;
+
+  let invUnitCost = 0;
+  if (variation) {
+    invUnitCost = getProductCostValue(variation);
+  }
+  if (invUnitCost === 0 && product) {
+    invUnitCost = getProductCostValue(product);
+  }
+
+  // 2.1 Explicit manual custom cost override typed directly by user on this order in Finance table
   if (
+    order?.isCustomProductCostManual === true &&
     order?.customProductCost !== undefined &&
     order?.customProductCost !== null &&
     Number(order.customProductCost) > 0
@@ -1430,27 +1552,54 @@ export const getOrderUnitAndTotalCost = (
       unitCost: uCost,
       totalCogs: total,
       extCost,
-      recognizedProduct: null,
-      recognizedVariation: null,
+      recognizedProduct: product,
+      recognizedVariation: variation,
       matchType: 'custom_override',
       calculatedQuantity: rawQty,
       isCustomOverride: true,
       breakdown: [{
-        productName: order.productName || '',
-        variationName: order.variation || '',
-        sku: order.sku || '',
+        productName: product?.name || order.productName || '',
+        variationName: variation?.name || order.variation || '',
+        sku: variation?.sku || product?.sku || order.sku || '',
         quantity: rawQty,
         unitCost: uCost,
-        totalCost: total
+        totalCost: total,
+        product,
+        variation
       }]
     };
   }
 
-  // 3. Standard match for single-item order
-  const match = findInventoryProductAndVariation(order, inventoryProducts);
-  const { product, variation, isOffer, offerMultiplier } = match;
+  // 2.2 If the inventory product / variation has a live cost (including manually corrected local_cost):
+  // USE THE INVENTORY'S COST! This ensures manually corrected costs are immediately applied.
+  // Only fall back to old customProductCost if the inventory product has 0 cost.
+  if (invUnitCost === 0 && order?.customProductCost !== undefined && order?.customProductCost !== null && Number(order.customProductCost) > 0) {
+    const rawQty = Number(order?.qnts) || 1;
+    const total = Number(order.customProductCost);
+    const uCost = rawQty > 0 ? total / rawQty : total;
+    return {
+      unitCost: uCost,
+      totalCogs: total,
+      extCost,
+      recognizedProduct: product,
+      recognizedVariation: variation,
+      matchType: 'custom_override',
+      calculatedQuantity: rawQty,
+      isCustomOverride: true,
+      breakdown: [{
+        productName: product?.name || order.productName || '',
+        variationName: variation?.name || order.variation || '',
+        sku: variation?.sku || product?.sku || order.sku || '',
+        quantity: rawQty,
+        unitCost: uCost,
+        totalCost: total,
+        product,
+        variation
+      }]
+    };
+  }
 
-  let unitCost = 0;
+  let unitCost = invUnitCost;
   let calculatedQty = Number(order?.qnts) || 1;
 
   if (product) {

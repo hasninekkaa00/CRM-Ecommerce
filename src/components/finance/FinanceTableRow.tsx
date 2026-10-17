@@ -150,7 +150,7 @@ export const FinanceTableRow = React.memo(function FinanceTableRow({
     const val = localCustomProductCost === '' ? undefined : Number(localCustomProductCost);
     const costToSet = (val !== undefined && val > 0) ? val : undefined;
     if (costToSet !== o.customProductCost) {
-      onUpdateOrder(o.id, { customProductCost: costToSet });
+      onUpdateOrder(o.id, { customProductCost: costToSet, isCustomProductCostManual: costToSet !== undefined });
     }
   };
 
@@ -363,7 +363,7 @@ export const FinanceTableRow = React.memo(function FinanceTableRow({
                 type="button"
                 onClick={() => {
                   setLocalCustomProductCost('');
-                  onUpdateOrder(o.id, { customProductCost: undefined });
+                  onUpdateOrder(o.id, { customProductCost: undefined, isCustomProductCostManual: false });
                 }}
                 className="text-gray-400 hover:text-rose-600 underline font-medium cursor-pointer"
                 title="إعادة للتكلفة التلقائية"

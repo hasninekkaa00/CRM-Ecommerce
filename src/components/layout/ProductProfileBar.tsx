@@ -191,7 +191,8 @@ export function ProductProfileBar({ isCollapsed = false, onToggleCollapse }: Pro
                 : 'bg-amber-50/90 border-amber-300 text-amber-950 focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-200'
             }`}
           >
-            <option value="all">الكل (جميع المنتجات والعمليات)</option>
+            <option value="all">الجميع (كافة المنتجات والعمليات)</option>
+            <option value="all">الجميع</option>
             {filterOptions}
           </select>
           

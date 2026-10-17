@@ -10,10 +10,11 @@ import { getAttemptCount } from '../../utils/orderUtils';
 import { fetchCompanyFeesAPI, getWilayaFeeFromFeesData, extractWilayaCode, isStopDeskOrder, calculateDefaultShippingFee, getEffectiveShippingCost } from '../../utils/shippingFees';
 import { exportFinanceOrdersToExcel } from '../../utils/excelExport';
 import { getOrderUnitAndTotalCost, extractOrderSkus, cleanSku, normalizeText, getProductCostValue } from '../../utils/productCostUtils';
-import { getPeriodReturnCost, safeParseDate, safeIsWithinInterval } from '../../utils/financeCalculations';
+import { getPeriodReturnCost, safeParseDate, safeIsWithinInterval, createFinanceCalculator } from '../../utils/financeCalculations';
 import { ViewOrderModal } from '../orders/ViewOrderModal';
 import { TablePagination } from '../common/TablePagination';
 import { ZeroOrNegativeProfitModal } from './ZeroOrNegativeProfitModal';
+import { AdvancedFinanceExportModal } from './AdvancedFinanceExportModal';
 import { FinanceTableRow } from './FinanceTableRow';
 
 const formatCurrency = (val: number) => {
@@ -576,6 +577,7 @@ export function ProfitSimulator() {
   const [tablePage, setTablePage] = useState<number>(1);
   const [tablePageSize, setTablePageSize] = useState<number>(25);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<any | null>(null);
+  const [showAdvancedExportModal, setShowAdvancedExportModal] = useState<boolean>(false);
 
   useEffect(() => {
     localStorage.setItem('profit_tableProductFilter', tableProductFilter);
@@ -738,6 +740,7 @@ export function ProfitSimulator() {
     switch (dateFilter) {
       case 'today': 
         s = startOfDay(now); 
+        e = endOfDay(now);
         cS = startOfDay(subDays(s, 1));
         cE = endOfDay(subDays(e, 1));
         break;
@@ -752,6 +755,7 @@ export function ProfitSimulator() {
       }
       case 'week': 
         s = startOfWeek(now, { weekStartsOn: 6 }); 
+        e = endOfWeek(now, { weekStartsOn: 6 });
         cS = startOfWeek(subWeeks(s, 1), { weekStartsOn: 6 });
         cE = endOfWeek(subWeeks(e, 1), { weekStartsOn: 6 });
         break;
@@ -1196,138 +1200,27 @@ export function ProfitSimulator() {
 
   // PERIOD CALCULATION based on `start` and `end` filter
   const createCalc = (periodStart: Date | null, periodEnd: Date | null) => {
-    let expectedRev = 0, expectedCogs = 0, expectedShip = 0, expectedCount = 0, expectedExtCost = 0;
-    let realRev = 0, realCogs = 0, realShip = 0, realCount = 0, realExtCost = 0;
-    let returnedCount = 0;
-    const returnedOrdersInPeriod: any[] = [];
-    let returnedExtCostSum = 0;
-
-    const exRate = settings?.exchangeRate || 245;
-
-    orders.forEach(o => {
-      if (confirmerFilter !== 'all' && o.confirmedBy !== confirmerFilter) return;
-      if (!checkProductMatchLocal(o)) return;
-
-      const isShipped = !!o.shippingTrackingId || ['تم الشحن', 'في الطريق', 'مستلم', 'مرتجع'].includes(o.status2 || '');
-      if (!isShipped) return;
-
-      const realStatus = (o.isExchangedReturn ? 'مستلم' : mapStatusToStatus2(o.status2 || '', o));
-      if (o.status1 === 'ملغى' || realStatus === 'ملغى' || realStatus === 'ملغاة' || realStatus === 'إلغاء') return;
-
-      const { totalCogs, extCost } = getOrderCosts(o);
-      const oDate = safeParseDate(o.orderDate);
-      
-      const isStatusExpected = realStatus !== 'مستلم' && realStatus !== 'مرتجع' && (o.status1 === 'مؤكد' || realStatus === 'تم الشحن' || realStatus === 'في الطريق');
-
-      const isInside = (d: Date | null) => {
-        if (!d) return false;
-        if (dateFilter === 'all') return true;
-        if (!periodStart || !periodEnd) return false;
-        return safeIsWithinInterval(d, { start: periodStart, end: periodEnd });
-      };
-
-      // EXPECTED Calculation (Based on Order Date)
-      if (isStatusExpected) {
-        if (isInside(oDate)) {
-            const qty = Number(o.qnts) || 1;
-            expectedCount += qty;
-            expectedRev += Number(o.totalCharge) || 0;
-            expectedShip += getEffectiveShippingCost(o, settings);
-            expectedCogs += totalCogs;
-            expectedExtCost += extCost;
-        }
-      }
-
-      // REALIZED Calculation (Based on Delivery Date)
-      if (realStatus === 'مستلم') {
-        const dDate = getDeliveryDate(o);
-        if (isInside(dDate)) {
-            const qty = Number(o.qnts) || 1;
-            realCount += qty;
-            realRev += Number(o.totalCharge) || 0;
-            realShip += getEffectiveShippingCost(o, settings);
-            realCogs += totalCogs;
-            realExtCost += extCost;
-        }
-      }
-
-      // RETURNS Calculation (Based on Return Date)
-      if (realStatus === 'مرتجع') {
-        const rDate = getReturnDate(o);
-        if (isInside(rDate)) {
-            const qty = Number(o.qnts) || 1;
-            returnedCount += qty;
-            returnedOrdersInPeriod.push(o);
-            returnedExtCostSum += extCost;
-        }
-      }
-    });
-
-    const { returnCostTotal, isMonthlySub: isSubMode, monthsCount, monthlySub } = getPeriodReturnCost({
-      settings,
+    return createFinanceCalculator(
       orders,
+      expenses,
+      campaigns,
+      campaignRecords,
+      settings,
+      inventoryProducts,
       dateFilter,
       periodStart,
       periodEnd,
-      returnedOrders: returnedOrdersInPeriod,
-      returnedExtCostSum
-    });
-
-    let adSpendUSD = 0;
-    
-    // Auto + Manual daily spend calculation
-    const matchingCampaigns = campaigns.filter(camp => isCampaignMatchedToProduct(camp, productFilter, inventoryProducts));
-
-    matchingCampaigns.forEach(camp => {
-        const records = campaignRecords.filter(r => r.campaignId === camp.id);
-        const calcStart = (dateFilter === 'all' || !periodStart) ? undefined : periodStart;
-        const calcEnd = (dateFilter === 'all' || !periodEnd) ? undefined : periodEnd;
-        adSpendUSD += calculateTotalCampaignSpend(camp, records, calcStart, calcEnd);
-    });
-
-    const adSpendDZD = adSpendUSD * exRate;
-
-    const extraExpenses = expenses.filter(e => {
-       if (dateFilter === 'all') return true;
-       if (!periodStart || !periodEnd) return false;
-       const eDate = safeParseDate(e.date);
-       return eDate && safeIsWithinInterval(eDate, { start: periodStart, end: periodEnd });
-    }).reduce((sum, e) => sum + e.amount, 0);
-
-    const isProdFiltered = productFilter !== 'all' || tableProductFilter !== 'all';
-
-    const effectiveReturnCostTotal = isProdFiltered ? (isSubMode ? 0 : returnCostTotal) : returnCostTotal;
-    const effectiveReturnedCount = returnedCount;
-    const effectiveExtraExpenses = isProdFiltered ? 0 : extraExpenses;
-    const effectiveExpectedExtCost = isProdFiltered ? 0 : expectedExtCost;
-    const effectiveRealExtCost = isProdFiltered ? 0 : realExtCost;
-
-    const expectedGrossProfit = expectedRev - expectedCogs - expectedShip - effectiveExpectedExtCost;
-    const expectedNetProfit = expectedGrossProfit; // Do not subtract ad spend or expenses
-
-    const realGrossProfit = realRev - realCogs - realShip - effectiveRealExtCost;
-    const realNetProfit = realGrossProfit - effectiveReturnCostTotal - adSpendDZD - effectiveExtraExpenses;
-    
-    const totalCombinedNetProfit = expectedGrossProfit + realGrossProfit - effectiveReturnCostTotal - adSpendDZD - effectiveExtraExpenses;
-    
-    return {
-      expectedRev, expectedCogs, expectedShip, expectedCount, expectedExtCost: effectiveExpectedExtCost,
-      realRev, realCogs, realShip, realCount, realExtCost: effectiveRealExtCost,
-      returnCostTotal: effectiveReturnCostTotal, returnedCount: effectiveReturnedCount,
-      isMonthlySub: isSubMode, monthsCount, monthlySub,
-      adSpendUSD, adSpendDZD, extraExpenses: effectiveExtraExpenses,
-      expectedGrossProfit, expectedNetProfit,
-      realGrossProfit, realNetProfit,
-      totalCombinedNetProfit
-    };
+      productFilter,
+      confirmerFilter
+    );
   };
 
-  const calc = useMemo(() => createCalc(start, end), [orders, settings, expenses, campaignRecords, start, end, dateFilter, confirmerFilter, productFilter, tableProductFilter, inventoryProducts]);
+  const calc = useMemo(() => createCalc(start, end), [orders, settings, expenses, campaigns, campaignRecords, start, end, dateFilter, confirmerFilter, productFilter, inventoryProducts]);
   
   const prevCalc = useMemo(() => {
     if (!comparePeriod || !compareStart || !compareEnd) return null;
     return createCalc(compareStart, compareEnd);
-  }, [orders, settings, expenses, campaignRecords, compareStart, compareEnd, dateFilter, confirmerFilter, productFilter, tableProductFilter, inventoryProducts, comparePeriod]);
+  }, [orders, settings, expenses, campaigns, campaignRecords, compareStart, compareEnd, dateFilter, confirmerFilter, productFilter, inventoryProducts, comparePeriod]);
 
   const calcTrend = (curr: number, prev: number | undefined) => {
     if (!comparePeriod || prev === undefined) return null;
@@ -1811,15 +1704,26 @@ export function ProfitSimulator() {
             </div>
           )}
 
-          <button
-            onClick={() => handleExportOrders(filteredOrders)}
-            disabled={filteredOrders.length === 0}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-xs hover:shadow-emerald-200/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-500 mr-auto"
-            title={`تصدير ${filteredOrders.length} طلبية تطابق فلترة المالية إلى ملف Excel (.xlsx)`}
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>تصدير Excel ({filteredOrders.length})</span>
-          </button>
+          <div className="flex items-center gap-2 mr-auto flex-wrap">
+            <button
+              onClick={() => setShowAdvancedExportModal(true)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-xs hover:shadow-emerald-200/50 cursor-pointer border border-emerald-500"
+              title="تصدير متقدم Excel: فلاتر متعددة، تجميع الموديلات والأنواع، تحكم بالأعمدة والتواريخ"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>تصدير متقدم Excel</span>
+            </button>
+
+            <button
+              onClick={() => handleExportOrders(filteredOrders)}
+              disabled={filteredOrders.length === 0}
+              className="hidden sm:flex items-center gap-1.5 bg-white hover:bg-emerald-50 text-emerald-700 px-3 py-2 rounded-xl text-xs font-bold transition-all border border-emerald-200 cursor-pointer disabled:opacity-50"
+              title={`تصدير سريع لـ ${filteredOrders.length} طلبية معروضة حالياً`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>تصدير سريع ({filteredOrders.length})</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2748,13 +2652,12 @@ export function ProfitSimulator() {
               </button>
 
               <button
-                onClick={() => handleExportOrders(filteredTableOrders, `جدول المالية (${tableStatusFilter !== 'all' ? tableStatusFilter : 'كل الحالات'} - ${tableProductFilter !== 'all' ? tableProductFilter : 'كل المنتجات'})`)}
-                disabled={filteredTableOrders.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 text-xs transition-all cursor-pointer disabled:opacity-50"
-                title="تصدير طلبيات الجدول إلى Excel"
+                onClick={() => setShowAdvancedExportModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white border border-emerald-400/40 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 text-xs transition-all cursor-pointer shadow-xs"
+                title="تصدير متقدم Excel (فلاتر متعددة، تجميع الموديلات، اختيار الأعمدة والتواريخ)"
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>تصدير Excel ({filteredTableOrders.length})</span>
+                <span>تصدير متقدم (Excel)</span>
               </button>
 
               <button 
@@ -2821,13 +2724,12 @@ export function ProfitSimulator() {
              </div>
 
              <button
-               onClick={() => handleExportOrders(filteredTableOrders, `جدول المالية (${tableStatusFilter !== 'all' ? tableStatusFilter : 'كل الحالات'} - ${tableProductFilter !== 'all' ? tableProductFilter : 'كل المنتجات'})`)}
-               disabled={filteredTableOrders.length === 0}
-               className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-500"
-               title={`تصدير ${filteredTableOrders.length} طلبية المعروضة حالياً بالجدول إلى Excel`}
+               onClick={() => setShowAdvancedExportModal(true)}
+               className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer border border-emerald-500"
+               title="تصدير متقدم Excel: فلاتر متعددة، تجميع الموديلات والأنواع، تحكم بالأعمدة والتواريخ"
              >
                <FileSpreadsheet size={14} />
-               <span>تصدير Excel ({filteredTableOrders.length})</span>
+               <span>تصدير متقدم (Excel)</span>
              </button>
              <button
                onClick={toggleTableFullscreen}
@@ -3516,6 +3418,29 @@ export function ProfitSimulator() {
           onGoToOrderInTable={handleGoToOrderInTable}
           settings={settings}
           isMonthlySub={isMonthlySub}
+        />
+      )}
+
+      {/* Advanced Finance Excel Export Modal */}
+      {showAdvancedExportModal && (
+        <AdvancedFinanceExportModal
+          isOpen={showAdvancedExportModal}
+          onClose={() => setShowAdvancedExportModal(false)}
+          allOrders={orders}
+          currentFilteredOrders={filteredTableOrders.length > 0 ? filteredTableOrders : filteredOrders}
+          inventoryProducts={inventoryProducts}
+          settings={settings}
+          currentDateFilterLabel={
+            dateFilter === 'today' ? 'اليوم' :
+            dateFilter === 'yesterday' ? 'الأمس' :
+            dateFilter === 'week' ? 'هذا الأسبوع' :
+            dateFilter === 'month' ? 'هذا الشهر' :
+            dateFilter === 'custom' ? `${customStart} إلى ${customEnd}` : 'جميع الفترات'
+          }
+          mapStatusFn={mapStatusToStatus2}
+          getOrderCostsFn={getOrderCosts}
+          getEffectiveShippingCostFn={getEffectiveShippingCost}
+          getDeliveryDateFn={getDeliveryDate}
         />
       )}
 

@@ -297,7 +297,7 @@ export const renderProductFilterOptions = (inventoryProducts: any[], orders: any
         if (p.variations.length > 0) {
             return (
                 <optgroup key={p.id || p.sku} label={p.name}>
-                    <option value={p.filterValue}>{p.isOffer ? `${p.name} (كل العروض)` : `${p.name} (الكل / جميع الأنواع)`}</option>
+                    <option value={p.filterValue}>{p.isOffer ? `${p.name} (الجميع / كل العروض)` : `${p.name} (الجميع / كافة الأنواع)`}</option>
                     {p.variations.map((v:any) => (
                         <option key={v.sku} value={v.filterValue}>
                             {p.name} - {v.name} ({v.sku})

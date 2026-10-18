@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import { format, subDays, parseISO, isWithinInterval, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, subMonths, subWeeks, subDays as subDaysDateFns } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { TrendingUp, TrendingDown, Package, Percent, DollarSign, Calendar, Filter, Truck, Ban, Megaphone, Activity, AlertTriangle, ArrowRight, ChevronDown, X, Search, LayoutGrid, List, ChevronLeft, ChevronRight, Layers, Tag, SlidersHorizontal, Boxes, Banknote } from 'lucide-react';
+import { TrendingUp, TrendingDown, Package, Percent, DollarSign, Calendar, Filter, Truck, Ban, Megaphone, Activity, AlertTriangle, ArrowRight, ChevronDown, X, Search, LayoutGrid, List, ChevronLeft, ChevronRight, Layers, Tag, SlidersHorizontal, Boxes, Banknote, Sparkles } from 'lucide-react';
 import { needsAction, getActionPriority } from '../../utils/orderUtils';
 import { AppSectionsCard } from '../layout/AppSectionsCard';
 
@@ -679,6 +679,17 @@ export function Dashboard({ onViewChange }: { onViewChange?: (view: any) => void
                 </div>
               )}
             </div>
+          )}
+
+          {comparePeriod && onViewChange && (
+            <button
+              onClick={() => onViewChange('indicators')}
+              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-black transition-colors cursor-pointer mt-1 md:mt-0"
+              title="عرض محرك مؤشرات وتحليل النمو التفصيلي والنسب المقارنة"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>مؤشرات وتحليل النمو 🚀</span>
+            </button>
           )}
         </div>
         

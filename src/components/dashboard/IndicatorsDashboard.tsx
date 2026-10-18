@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, 
   PieChart, Pie, Cell, CartesianGrid, AreaChart, Area, LineChart, Line, Legend
 } from 'recharts';
+import { GrowthIndicatorsEngine } from './GrowthIndicatorsEngine';
 
 const formatCurrency = (val: number) => {
   return Math.round(Number(val) || 0).toLocaleString('fr-FR');
@@ -52,6 +53,7 @@ export function IndicatorsDashboard() {
   const [productSortBy, setProductSortBy] = useState<'returnToAdSpendRatio' | 'profitRoas' | 'revenueRoas' | 'adSpend' | 'realNet' | 'returnedCount'>('returnToAdSpendRatio');
   const [productSortOrder, setProductSortOrder] = useState<'desc' | 'asc'>('desc');
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'growth'>('overview');
 
   React.useEffect(() => {
     localStorage.setItem('indicators_dateFilter', dateFilter);
@@ -533,6 +535,34 @@ export function IndicatorsDashboard() {
                 مؤشرات الأداء الشاملة
               </h2>
               <p className="text-gray-500 mt-1 text-sm font-medium">لوحة تحكم إحصائية راقية لجميع مؤشرات المالية، الإعلانات، نسبة الروتورن، و ROAS الفائدة الصافية.</p>
+
+              {/* View Mode Tabs: Overview vs Growth */}
+              <div className="flex items-center gap-1.5 bg-gray-200/80 p-1 rounded-2xl border border-gray-200 mt-2.5 self-start">
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'overview'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>المؤشرات الشاملة والأرباح</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('growth')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'growth'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-indigo-700 hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>مؤشرات وتحليل النمو (Growth Engine)</span>
+                  <span className="px-1.5 py-0.2 rounded-md bg-amber-400 text-amber-950 text-[10px] font-black">جديد</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -640,7 +670,43 @@ export function IndicatorsDashboard() {
         </div>
       </div>
 
-      {/* Row 1: Finance Summary */}
+      {activeTab === 'growth' ? (
+        <GrowthIndicatorsEngine
+          initialProductFilter={productFilter}
+          onCloseToOverview={() => setActiveTab('overview')}
+        />
+      ) : (
+        <>
+          {/* Quick Growth Callout Banner */}
+          <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-emerald-50 rounded-2xl p-4 sm:p-5 border border-indigo-100 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-xs shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-black text-gray-900">
+                    هل تريد قياس نسبة النمو وقيمته بين مرحلتين؟
+                  </h4>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    مقارنة فترات ذكية
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 font-medium">
+                  اكتشف هل نمو متجرك إيجابي أم سلبي مع احتساب فارق القيمة ونسبة النمو % لجميع المبيعات والأرباح ومعدلات التسليم.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('growth')}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-xs flex items-center gap-2 transition-all self-start sm:self-auto cursor-pointer shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>فتح مؤشرات النمو 🚀</span>
+            </button>
+          </div>
+
+          {/* Row 1: Finance Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard 
           title="صافي الأرباح الحقيقية" 
@@ -1367,6 +1433,8 @@ export function IndicatorsDashboard() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Guide & Info Modal */}
       {showInfoModal && (

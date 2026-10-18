@@ -8,6 +8,8 @@ import ecotrackCommunes from '../../ecotrack-communes.json';
 import { ShippingDeskInfo } from '../shipping/ShippingDeskInfo';
 import { CHANNEL_PRESETS } from '../../utils/channelUtils';
 import { TAGS_OPTIONS } from './OrdersList';
+import { QuickAddTagModal } from './QuickAddTagModal';
+import { DEFAULT_TAGS } from '../../utils/tagUtils';
 import { calculateDefaultShippingFee } from '../../utils/shippingFees';
 
 const ALGERIA_WILAYAS = Object.entries(WILAYAS_MAP).map(([code, name]) => ({
@@ -58,8 +60,8 @@ export function AddOrderModal({ isOpen, onClose }: AddOrderModalProps) {
     ? settings.status2Options 
     : ['', 'قيد التجهيز', 'قابلة للشحن', 'تم الشحن', 'في الطريق', 'مستلم', 'مرتجع'];
 
-  
-
+  const [isQuickTagModalOpen, setIsQuickTagModalOpen] = useState(false);
+  const activeTags = (settings?.tags && settings.tags.length > 0) ? settings.tags : DEFAULT_TAGS;
   const confirmersList = Array.from(new Set(users.filter(u => u.role === 'confirmer' || (u.commissionConfig && u.isActive)).map(u => u.displayName).filter(Boolean)));
   const defaultDeliveryList = ['ياليدين', 'مايسترو', 'زد آر إكسبريس', 'إيكوتراك', 'أرامكس', 'توصيل محلي'];
   const customDelivery = Array.isArray(settings?.deliveryCompanies)
@@ -777,17 +779,44 @@ export function AddOrderModal({ isOpen, onClose }: AddOrderModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">تاغ الطلبية</label>
-                  <select
-                    value={formData.tag ?? ''}
-                    onChange={e => setFormData({ ...formData, tag: e.target.value })}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">بدون تاغ</option>
-                    {TAGS_OPTIONS.map((t, idx) => (
-                      <option key={idx} value={t.name}>{t.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-700">تاغ الطلبية</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickTagModalOpen(true)}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>تاغ جديد</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={formData.tag ?? ''}
+                      onChange={e => {
+                        if (e.target.value === '__CREATE_NEW_TAG__') {
+                          setIsQuickTagModalOpen(true);
+                        } else {
+                          setFormData({ ...formData, tag: e.target.value });
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">بدون تاغ</option>
+                      <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-extrabold bg-indigo-50">✨ + إنشاء تاغ جديد وحفظه...</option>
+                      {activeTags.map((t: any, idx: number) => (
+                        <option key={t.name || idx} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickTagModalOpen(true)}
+                      title="إنشاء تاغ جديد وحفظه في السحابة"
+                      className="p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 transition-colors cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -852,6 +881,14 @@ export function AddOrderModal({ isOpen, onClose }: AddOrderModalProps) {
         </div>
 
       </div>
+
+      <QuickAddTagModal
+        isOpen={isQuickTagModalOpen}
+        onTagCreated={(newTag) => {
+          setFormData(prev => ({ ...prev, tag: newTag.name }));
+        }}
+        onClose={() => setIsQuickTagModalOpen(false)}
+      />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   formatTagTimestamp 
 } from '../../utils/tagUtils';
 import { TAGS_OPTIONS } from '../orders/OrdersList';
+import { QuickAddTagModal } from '../orders/QuickAddTagModal';
 import { calculateDefaultShippingFee } from '../../utils/shippingFees';
 import { AbandonedOrder, Order, OrderTagEntry } from '../../types';
 import toast from 'react-hot-toast';
@@ -111,6 +112,8 @@ export function AbandonedList() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isRecovering, setIsRecovering] = useState<string | null>(null);
   const [isBatchRecovering, setIsBatchRecovering] = useState(false);
+  const [quickTagTargetOrder, setQuickTagTargetOrder] = useState<AbandonedOrder | null>(null);
+  const [isQuickTagModalOpen, setIsQuickTagModalOpen] = useState(false);
 
   // Active tags from settings or defaults
   const activeTags = useMemo(() => {
@@ -1318,21 +1321,39 @@ export function AbandonedList() {
                             )}
                           </div>
 
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleAddTag(order, e.target.value);
+                          <div className="flex items-center gap-1">
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__CREATE_NEW_TAG__') {
+                                  setQuickTagTargetOrder(order);
+                                  setIsQuickTagModalOpen(true);
+                                } else if (val) {
+                                  handleAddTag(order, val);
+                                }
                                 e.target.value = '';
-                              }
-                            }}
-                            className="w-full bg-white border border-indigo-200 hover:border-indigo-400 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 focus:outline-none transition-all cursor-pointer text-center"
-                          >
-                            <option value="">+ إضافة تاغ...</option>
-                            {activeTags.map(opt => (
-                              <option key={opt.name} value={opt.name}>{opt.name}</option>
-                            ))}
-                          </select>
+                              }}
+                              className="w-full bg-white border border-indigo-200 hover:border-indigo-400 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 focus:outline-none transition-all cursor-pointer text-center"
+                            >
+                              <option value="">+ إضافة تاغ...</option>
+                              <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-extrabold bg-indigo-50">✨ + إنشاء تاغ جديد...</option>
+                              {activeTags.map(opt => (
+                                <option key={opt.name} value={opt.name}>{opt.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickTagTargetOrder(order);
+                                setIsQuickTagModalOpen(true);
+                              }}
+                              title="إنشاء تاغ جديد وحفظه في السحابة"
+                              className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md border border-indigo-200 transition-colors cursor-pointer shrink-0"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
                         </div>
                       </td>
 
@@ -1551,6 +1572,17 @@ export function AbandonedList() {
           </div>
         </div>
       )}
+
+      {/* Quick Add Tag Modal */}
+      <QuickAddTagModal
+        isOpen={isQuickTagModalOpen}
+        targetOrder={quickTagTargetOrder}
+        isAbandoned={true}
+        onClose={() => {
+          setIsQuickTagModalOpen(false);
+          setQuickTagTargetOrder(null);
+        }}
+      />
     </div>
   );
 }

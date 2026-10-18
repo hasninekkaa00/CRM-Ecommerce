@@ -22,6 +22,7 @@ import {
   removeTagFromOrder, 
   formatTagTimestamp 
 } from '../../utils/tagUtils';
+import { QuickAddTagModal } from './QuickAddTagModal';
 import toast from 'react-hot-toast';
 
 export interface QuickTemplateItem {
@@ -86,6 +87,8 @@ export function SuiviDashboard() {
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [noteTargets, setNoteTargets] = useState<Record<string, NoteTarget>>({});
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [quickTagTargetOrder, setQuickTagTargetOrder] = useState<Order | null>(null);
+  const [isQuickTagModalOpen, setIsQuickTagModalOpen] = useState(false);
 
   const activeTags = settings?.tags || [];
 
@@ -1193,21 +1196,39 @@ export function SuiviDashboard() {
                           <Tag className="w-3 h-3 text-indigo-500" />
                           التاغات ({tagsHistory.length}):
                         </span>
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleAddTag(order, e.target.value);
+                        <div className="flex items-center gap-1">
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '__CREATE_NEW_TAG__') {
+                                setQuickTagTargetOrder(order);
+                                setIsQuickTagModalOpen(true);
+                              } else if (val) {
+                                handleAddTag(order, val);
+                              }
                               e.target.value = '';
-                            }
-                          }}
-                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[10px] font-black px-2 py-0.5 rounded-lg border border-indigo-200 outline-none cursor-pointer"
-                        >
-                          <option value="">+ إضافة تاغ</option>
-                          {activeTags.map((t) => (
-                            <option key={t.name} value={t.name}>{t.name}</option>
-                          ))}
-                        </select>
+                            }}
+                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[10px] font-black px-1.5 py-0.5 rounded-lg border border-indigo-200 outline-none cursor-pointer"
+                          >
+                            <option value="">+ إضافة تاغ...</option>
+                            <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-black bg-indigo-50">✨ + إنشاء تاغ جديد...</option>
+                            {activeTags.map((t) => (
+                              <option key={t.name} value={t.name}>{t.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickTagTargetOrder(order);
+                              setIsQuickTagModalOpen(true);
+                            }}
+                            title="إنشاء تاغ جديد وحفظه في السحابة"
+                            className="p-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar">
@@ -1821,6 +1842,16 @@ export function SuiviDashboard() {
           </div>
         </div>
       )}
+
+      {/* Quick Add Tag Modal */}
+      <QuickAddTagModal
+        isOpen={isQuickTagModalOpen}
+        targetOrder={quickTagTargetOrder}
+        onClose={() => {
+          setIsQuickTagModalOpen(false);
+          setQuickTagTargetOrder(null);
+        }}
+      />
     </div>
   );
 }

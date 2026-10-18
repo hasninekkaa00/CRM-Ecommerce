@@ -4,8 +4,9 @@ import {
   Order, AbandonedOrder, Campaign, CampaignRecord, CampaignField, 
   SalesChannel, SystemSettings, Expense, InventoryProduct, Supplier, 
   PurchaseInvoice, SupplierPayment, ShippingInvoice, Partner, PartnerTransaction, 
-  AppUser, ConfirmerInvoice, AutoAssignmentStrategy 
+  AppUser, ConfirmerInvoice, AutoAssignmentStrategy, OrderTag 
 } from '../types';
+import { DEFAULT_TAGS } from '../utils/tagUtils';
 import { db, safeFirestoreWrite } from '../lib/firebase';
 import { collection, doc, setDoc, deleteDoc, updateDoc, writeBatch, arrayUnion } from 'firebase/firestore';
 import { fetchCompanyFeesAPI, getWilayaFeeFromFeesData, extractWilayaCode, isStopDeskOrder, calculateDefaultShippingFee, resolveOrderRealShippingPrice, getEffectiveShippingCost } from '../utils/shippingFees';
@@ -260,6 +261,9 @@ export interface AppState {
   deleteSalesChannel: (id: string, force?: boolean) => Promise<void>;
 
   updateSettings: (updates: Partial<SystemSettings>) => Promise<void>;
+  addTag: (tag: OrderTag) => Promise<void>;
+  removeTag: (tagName: string) => Promise<void>;
+  updateTag: (oldName: string, updatedTag: OrderTag) => Promise<void>;
 
   addExpense: (expense: Expense) => Promise<void>;
   updateExpense: (id: string, updates: Partial<Expense>) => Promise<void>;
@@ -1589,6 +1593,70 @@ export const useStore = create<AppState>()((set, get) => ({
     delete plainSettings.deletedWooOrderIds; 
     
     await safeFirestoreWrite(() => setDoc(doc(db, 'settings', 'general'), plainSettings, { merge: true }), 'updateSettings');
+  },
+
+  addTag: async (tag: OrderTag) => {
+    const state = get();
+    const currentSettings = state.settings || {
+      status1Options: [],
+      status2Options: [],
+      deliveryCompanies: [],
+      confirmers: [],
+      inventoryManagementMode: 'local',
+      tags: DEFAULT_TAGS,
+    } as SystemSettings;
+    const currentTags = Array.isArray(currentSettings.tags) && currentSettings.tags.length > 0
+      ? [...currentSettings.tags]
+      : [...DEFAULT_TAGS];
+
+    const trimmedName = tag.name.trim();
+    if (!trimmedName) return;
+
+    const existingIndex = currentTags.findIndex(t => t.name.toLowerCase() === trimmedName.toLowerCase());
+    let updatedTags: OrderTag[];
+    if (existingIndex >= 0) {
+      updatedTags = currentTags.map((t, idx) => idx === existingIndex ? { ...t, name: trimmedName, color: tag.color || t.color } : t);
+    } else {
+      updatedTags = [...currentTags, { name: trimmedName, color: tag.color || 'bg-indigo-100 text-indigo-800 border-indigo-300' }];
+    }
+
+    const newSettings = { ...currentSettings, tags: updatedTags };
+    set({ settings: newSettings });
+
+    await safeFirestoreWrite(
+      () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
+      'addTag'
+    );
+  },
+
+  removeTag: async (tagName: string) => {
+    const state = get();
+    const currentSettings = state.settings || {} as SystemSettings;
+    const currentTags = Array.isArray(currentSettings.tags) ? currentSettings.tags : DEFAULT_TAGS;
+    const updatedTags = currentTags.filter(t => t.name.toLowerCase() !== tagName.trim().toLowerCase());
+
+    const newSettings = { ...currentSettings, tags: updatedTags };
+    set({ settings: newSettings });
+
+    await safeFirestoreWrite(
+      () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
+      'removeTag'
+    );
+  },
+
+  updateTag: async (oldName: string, updatedTag: OrderTag) => {
+    const state = get();
+    const currentSettings = state.settings || {} as SystemSettings;
+    const currentTags = Array.isArray(currentSettings.tags) ? currentSettings.tags : DEFAULT_TAGS;
+    const updatedTags = currentTags.map(t => t.name.toLowerCase() === oldName.trim().toLowerCase() ? updatedTag : t);
+
+    const newSettings = { ...currentSettings, tags: updatedTags };
+    set({ settings: newSettings });
+
+    await safeFirestoreWrite(
+      () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
+      'updateTag'
+    );
   },
 
   addExpense: async (expense) => {

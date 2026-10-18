@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { SourceChannelBadge } from '../../utils/channelUtils';
 import { isNoteFromToday, detectNoteTarget } from '../../utils/noteUtils';
 import { getOrderTagsHistory, formatTagTimestamp, addTagToOrder, removeTagFromOrder } from '../../utils/tagUtils';
+import { QuickAddTagModal } from './QuickAddTagModal';
 
 interface ViewOrderModalProps {
   order: any;
@@ -41,6 +42,7 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
   const {  settings, salesChannels, orders, updateOrder , users } = useStore();
   const [selectedNewTag, setSelectedNewTag] = useState('');
   const [isUpdatingTag, setIsUpdatingTag] = useState(false);
+  const [isQuickTagOpen, setIsQuickTagOpen] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [newNoteInput, setNewNoteInput] = useState('');
 
@@ -474,20 +476,34 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
                      <select
                        value={selectedNewTag}
                        onChange={(e) => {
-                         if (e.target.value) {
-                           handleAddTag(e.target.value);
+                         const val = e.target.value;
+                         if (val === '__CREATE_NEW_TAG__') {
+                           setIsQuickTagOpen(true);
+                           setSelectedNewTag('');
+                         } else if (val) {
+                           handleAddTag(val);
                          }
                        }}
                        disabled={isUpdatingTag}
                        className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-black text-xs px-2.5 py-1 rounded-xl cursor-pointer focus:outline-none transition-all"
                      >
-                       <option value="">+ إضافة تاغ جديد</option>
+                       <option value="">+ إضافة تاغ للطلبية...</option>
+                       <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-black bg-indigo-50">✨ + إنشاء تاغ جديد وحفظه...</option>
                        {activeTags.map((opt: any) => (
                          <option key={opt.name} value={opt.name}>
                            {opt.name}
                          </option>
                        ))}
                      </select>
+                     <button
+                       type="button"
+                       onClick={() => setIsQuickTagOpen(true)}
+                       title="إنشاء تاغ جديد وحفظه في السحابة"
+                       className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs transition-colors cursor-pointer shrink-0"
+                     >
+                       <Plus className="w-3.5 h-3.5" />
+                       <span>تاغ جديد</span>
+                     </button>
                    </div>
                  </div>
 
@@ -766,6 +782,11 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
            </button>
         </div>
       </div>
+      <QuickAddTagModal
+        isOpen={isQuickTagOpen}
+        targetOrder={currentOrder}
+        onClose={() => setIsQuickTagOpen(false)}
+      />
     </div>
   );
 }

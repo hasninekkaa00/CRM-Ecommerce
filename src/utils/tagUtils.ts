@@ -1,5 +1,34 @@
 import { Order, AbandonedOrder, OrderTag, OrderTagEntry } from '../types';
 
+export const TAG_COLOR_PRESETS = [
+  { name: 'زمردي أخضر', color: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold' },
+  { name: 'أخضر هادئ', color: 'bg-green-100 text-green-800 border-green-300 font-bold' },
+  { name: 'أزرق سماوي', color: 'bg-blue-100 text-blue-800 border-blue-300 font-bold' },
+  { name: 'نيلي ملكي', color: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold' },
+  { name: 'كهرماني VIP', color: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold' },
+  { name: 'برتقالي تحذيري', color: 'bg-orange-100 text-orange-800 border-orange-300 font-bold' },
+  { name: 'أحمر عاجل', color: 'bg-red-100 text-red-800 border-red-300 font-bold' },
+  { name: 'وردي لطيف', color: 'bg-rose-100 text-rose-800 border-rose-300 font-bold' },
+  { name: 'بنفسجي داكن', color: 'bg-purple-100 text-purple-800 border-purple-300 font-bold' },
+  { name: 'رمادي محايد', color: 'bg-slate-100 text-slate-700 border-slate-300 font-bold' },
+  { name: 'فيروزي مائي', color: 'bg-teal-100 text-teal-800 border-teal-300 font-bold' }
+];
+
+export const DEFAULT_TAGS: OrderTag[] = [
+  { name: 'متروكة ناجحة', color: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold' },
+  { name: 'طلب جديد', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+  { name: 'طلبية مؤكدة', color: 'bg-green-100 text-green-800 border-green-300' },
+  { name: 'زبون VIP', color: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold' },
+  { name: 'لا يرد - محاولة 1', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+  { name: 'لا يرد - محاولة 2', color: 'bg-orange-100 text-orange-800 border-orange-300' },
+  { name: 'لا يرد - محاولة 3', color: 'bg-red-100 text-red-800 border-red-300 font-bold' },
+  { name: 'توصيل سريع', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+  { name: 'مشكلة في العنوان', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+  { name: 'طلب خاص', color: 'bg-blue-100 text-blue-800 border-blue-300' }
+];
+
+export const TAGS_OPTIONS = DEFAULT_TAGS;
+
 export function getOrderTagsHistory(order: Order | AbandonedOrder | any, activeTagsSettings?: OrderTag[]): OrderTagEntry[] {
   if (!order) return [];
   if (order.tagsHistory && Array.isArray(order.tagsHistory) && order.tagsHistory.length > 0) {

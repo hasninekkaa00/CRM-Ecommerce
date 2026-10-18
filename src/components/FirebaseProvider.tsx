@@ -4,6 +4,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthState
 import { collection, onSnapshot, query, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { useStore } from '../store';
 import { Order, AbandonedOrder, Campaign, CampaignRecord, CampaignField, SalesChannel, SystemSettings, Expense, AppUser } from '../types';
+import { DEFAULT_TAGS } from '../utils/tagUtils';
 import { LogIn, UserX, ShieldAlert, LogOut, Loader2, AlertTriangle, X, ExternalLink } from 'lucide-react';
 import { firebaseConfig } from '../lib/firebaseConfig';
 
@@ -214,10 +215,25 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           if (docSnap.exists()) {
             const rawData = docSnap.data() as SystemSettings;
             const fallbackDelivery = ['ياليدين', 'مايسترو', 'زد آر إكسبريس', 'إيكوتراك', 'أرامكس', 'سمسا', 'توصيل محلي'];
-            const resolvedDelivery = Array.isArray(rawData.deliveryCompanies)
+            const resolvedDelivery = Array.isArray(rawData.deliveryCompanies) && rawData.deliveryCompanies.length > 0
               ? rawData.deliveryCompanies
               : fallbackDelivery;
-            useStore.getState().setSettings({ id: docSnap.id, ...rawData, deliveryCompanies: resolvedDelivery } as SystemSettings);
+            const hasTagsInDb = Array.isArray(rawData.tags) && rawData.tags.length > 0;
+            const resolvedTags = hasTagsInDb ? rawData.tags : DEFAULT_TAGS;
+
+            useStore.getState().setSettings({ 
+              id: docSnap.id, 
+              ...rawData, 
+              deliveryCompanies: resolvedDelivery,
+              tags: resolvedTags
+            } as SystemSettings);
+
+            // If tags were never seeded into Firestore doc, persist them now so they are permanently saved across all devices!
+            if (!hasTagsInDb) {
+              setDoc(doc(db, 'settings', 'general'), { tags: DEFAULT_TAGS }, { merge: true }).catch(err => {
+                console.warn("Could not seed default tags into Firestore:", err);
+              });
+            }
           } else {
             // Default settings if non-existent
             const defaultSettings: SystemSettings = {
@@ -226,6 +242,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               deliveryCompanies: ['أرامكس', 'سمسا', 'ياليدين', 'مايان', 'زاجل', 'توصيل محلي'],
               confirmers: [],
               inventoryManagementMode: 'local',
+              tags: DEFAULT_TAGS,
             };
             useStore.getState().setSettings(defaultSettings);
             // Proactively create the document so the collection is created inside Firestore!

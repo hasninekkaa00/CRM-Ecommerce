@@ -24,6 +24,7 @@ import { AddOrderModal } from './AddOrderModal';
 import { ViewOrderModal } from './ViewOrderModal';
 import { ReplaceOrderModal } from './ReplaceOrderModal';
 import { PickingListModal } from './PickingListModal';
+import { QuickAddTagModal } from './QuickAddTagModal';
 import { checkProductMatch, renderProductFilterOptions } from '../../utils/productFilters';
 import { ShoppingCart } from 'lucide-react';
 import { formatWilaya, WILAYAS_MAP } from '../../utils/algeriaWilayas';
@@ -466,6 +467,8 @@ export function OrdersList() {
   }, [focusModeOrderId]);
   const [replaceOrderModal, setReplaceOrderModal] = useState<any | null>(null);
   const [reminderModalOrder, setReminderModalOrder] = useState<any | null>(null);
+  const [quickTagTargetOrder, setQuickTagTargetOrder] = useState<any | null>(null);
+  const [isQuickTagModalOpen, setIsQuickTagModalOpen] = useState(false);
   const [smsModalOrder, setSmsModalOrder] = useState<any | null>(null);
   const [smsModalMessage, setSmsModalMessage] = useState('');
   const [smsModalLoading, setSmsModalLoading] = useState(false);
@@ -2693,20 +2696,39 @@ export function OrdersList() {
                           )}
                         </div>
 
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              const res = addTagToOrder(order, e.target.value, activeTags);
-                              updateOrder(order.id, { tag: res.tag, tagsHistory: res.tagsHistory });
+                        <div className="flex items-center gap-1 w-full">
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '__CREATE_NEW_TAG__') {
+                                setQuickTagTargetOrder(order);
+                                setIsQuickTagModalOpen(true);
+                              } else if (val) {
+                                const res = addTagToOrder(order, val, activeTags);
+                                updateOrder(order.id, { tag: res.tag, tagsHistory: res.tagsHistory });
+                              }
                               e.target.value = '';
-                            }
-                          }}
-                          className="w-full bg-white border border-indigo-200 hover:border-indigo-400 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold text-indigo-700 focus:outline-none transition-all cursor-pointer text-center"
-                        >
-                          <option value="">+ إضافة تاغ</option>
-                          {activeTags.map(opt => <option key={opt.name} value={opt.name}>{opt.name}</option>)}
-                        </select>
+                            }}
+                            className="flex-1 min-w-0 bg-white border border-indigo-200 hover:border-indigo-400 rounded-md px-1 py-0.5 text-[10px] font-extrabold text-indigo-700 focus:outline-none transition-all cursor-pointer text-center"
+                          >
+                            <option value="">+ إضافة تاغ...</option>
+                            <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-black bg-indigo-50">✨ + إنشاء تاغ جديد وحفظه...</option>
+                            {activeTags.map(opt => <option key={opt.name} value={opt.name}>{opt.name}</option>)}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setQuickTagTargetOrder(order);
+                              setIsQuickTagModalOpen(true);
+                            }}
+                            title="إنشاء تاغ جديد وحفظه في السحابة"
+                            className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 border border-indigo-200 rounded-md transition-colors cursor-pointer shrink-0"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
                       </div>
                     </td>
                     <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.deliveryCompany, minWidth: colWidths.deliveryCompany, maxWidth: colWidths.deliveryCompany, overflow: 'visible' }}>
@@ -3760,25 +3782,44 @@ export function OrdersList() {
                                             </button>
                                         </span>
                                     ))}
-                                    <select
-                                        value=""
-                                        onChange={(e) => {
-                                            if (e.target.value) {
-                                                const result = addTagToOrder(focusedOrder, e.target.value, settings?.tags || []);
-                                                updateOrder(focusedOrder.id, {
-                                                    tag: result.tag,
-                                                    tagsHistory: result.tagsHistory,
-                                                });
+                                    <div className="flex items-center gap-1.5">
+                                        <select
+                                            value=""
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === '__CREATE_NEW_TAG__') {
+                                                    setQuickTagTargetOrder(focusedOrder);
+                                                    setIsQuickTagModalOpen(true);
+                                                } else if (val) {
+                                                    const result = addTagToOrder(focusedOrder, val, settings?.tags || []);
+                                                    updateOrder(focusedOrder.id, {
+                                                        tag: result.tag,
+                                                        tagsHistory: result.tagsHistory,
+                                                    });
+                                                }
                                                 e.target.value = '';
-                                            }
-                                        }}
-                                        className="bg-indigo-50 text-indigo-900 text-[11px] font-black px-2 py-1.5 rounded-xl border border-indigo-200 outline-none cursor-pointer"
-                                    >
-                                        <option value="">+ إضافة تاغ جديد</option>
-                                        {(settings?.tags || []).map((t: any) => (
-                                            <option key={t.name} value={t.name}>{t.name}</option>
-                                        ))}
-                                    </select>
+                                            }}
+                                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-[11px] font-black px-2.5 py-1.5 rounded-xl border border-indigo-200 outline-none cursor-pointer"
+                                        >
+                                            <option value="">+ إضافة تاغ للطلبية...</option>
+                                            <option value="__CREATE_NEW_TAG__" className="text-indigo-600 font-extrabold bg-indigo-100">✨ + إنشاء تاغ جديد وحفظه...</option>
+                                            {(settings?.tags || []).map((t: any) => (
+                                                <option key={t.name} value={t.name}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setQuickTagTargetOrder(focusedOrder);
+                                                setIsQuickTagModalOpen(true);
+                                            }}
+                                            title="إنشاء تاغ جديد وحفظه في السحابة"
+                                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-black flex items-center gap-1 shadow-xs transition-colors cursor-pointer shrink-0"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>تاغ جديد</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                           </div>
@@ -3910,6 +3951,16 @@ export function OrdersList() {
         <ViewOrderModal order={viewOrderModal} onClose={() => setViewOrderModal(null)} />
       )}
       <ReplaceOrderModal originalOrder={replaceOrderModal} isOpen={!!replaceOrderModal} onClose={() => setReplaceOrderModal(null)} />
+
+      {/* Quick Add Tag Modal */}
+      <QuickAddTagModal
+        isOpen={isQuickTagModalOpen}
+        targetOrder={quickTagTargetOrder}
+        onClose={() => {
+          setIsQuickTagModalOpen(false);
+          setQuickTagTargetOrder(null);
+        }}
+      />
 
       {/* Manual SMS Modal */}
       {smsModalOrder && (

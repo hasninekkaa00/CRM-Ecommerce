@@ -3,6 +3,7 @@ import { X, AlertTriangle, Box, Minus, ShoppingCart, Printer, RotateCcw, CheckCi
 import { useStore } from '../../store';
 import { calculateDynamicStock } from '../../utils/inventoryCalc';
 import toast from 'react-hot-toast';
+import { triggerPrint } from '../../utils/printUtils';
 
 interface DeficitListModalProps {
   onClose: () => void;
@@ -69,7 +70,7 @@ export function DeficitListModal({ onClose }: DeficitListModalProps) {
   }, [products, settings?.inventoryManagementMode, purchaseInvoices, orders]);
 
   const handlePrint = () => {
-    window.print();
+    triggerPrint({ printableElementId: 'printable-deficit-list', title: 'قائمة_عجز_المخزون' });
   };
 
   const handleZeroItem = async (item: any) => {
@@ -151,17 +152,14 @@ export function DeficitListModal({ onClose }: DeficitListModalProps) {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-6 printable-area bg-slate-50 space-y-4">
-           <style dangerouslySetInnerHTML={{__html: `
-              @media print {
-                 body * { visibility: hidden; }
-                 .printable-area, .printable-area * { visibility: visible; }
-                 .printable-area { position: absolute; left: 0; top: 0; right: 0; width: 100%; height: auto; padding: 20px !important; background: white !important; margin: 0; }
-                 .print\\:hidden { display: none !important; }
-                 @page { margin: 1cm; }
-              }
-           `}} />
+        <div id="printable-deficit-list" className="flex-1 overflow-y-auto p-6 printable-area bg-slate-50 space-y-4">
            
+           {/* Printable Only Title */}
+           <div className="hidden print:block border-b-2 border-slate-900 pb-4 mb-4 text-center">
+             <h1 className="text-2xl font-black text-slate-900">تقرير عجز المخزون وقائمة الاحتياجات</h1>
+             <p className="text-xs font-bold text-slate-600 mt-1">تاريخ الاستخراج: {new Date().toLocaleDateString('ar-DZ')} - عدد الأصناف التي بها عجز: {detailedDeficitList.length} صنف</p>
+           </div>
+
            <div className="print:hidden flex items-center justify-between gap-2 bg-rose-100/80 text-rose-900 px-4 py-3 rounded-2xl border border-rose-200 font-bold text-xs">
                <div className="flex items-center gap-2">
                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" /> 

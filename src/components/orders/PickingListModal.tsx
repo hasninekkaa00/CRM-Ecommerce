@@ -38,6 +38,7 @@ import { getProductDisplayPrice, getProductDisplayCost, getProductCostValue } fr
 import { DeficitListModal } from '../inventory/DeficitListModal';
 import { QuickReclassifyModal } from './QuickReclassifyModal';
 import { ViewOrderModal } from './ViewOrderModal';
+import { triggerPrint } from '../../utils/printUtils';
 
 interface PickingListModalProps {
   orders: any[]; // Filtered or passed orders
@@ -1005,7 +1006,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
   }, [productGroups, searchQuery, filterMode, checkedItems]);
 
   const handlePrint = () => {
-    window.print();
+    triggerPrint({ printableElementId: 'picking-list-modal', title: 'قائمة_تجهيز_الطلبيات' });
   };
 
   return (
@@ -1289,34 +1290,6 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
 
         {/* Main Content Area - Expansive Height & Scroll */}
         <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 md:p-6 printable-area custom-scrollbar space-y-5">
-          {/* Print Styles */}
-          <style dangerouslySetInnerHTML={{__html: `
-            @media print {
-              body * { visibility: hidden !important; }
-              #picking-list-modal, #picking-list-modal * { visibility: visible !important; }
-              #picking-list-modal { 
-                position: absolute !important; 
-                left: 0 !important; 
-                top: 0 !important; 
-                right: 0 !important; 
-                width: 100% !important; 
-                height: auto !important; 
-                border: none !important; 
-                box-shadow: none !important; 
-                background: white !important; 
-                margin: 0 !important; 
-                padding: 10px !important;
-                border-radius: 0 !important;
-              }
-              .printable-area { 
-                padding: 0 !important; 
-                overflow: visible !important; 
-              }
-              .print\\:hidden { display: none !important; }
-              .print-box { border: 2px solid #333 !important; width: 18px !important; height: 18px !important; display: inline-block !important; border-radius: 3px !important; }
-              .page-break { page-break-after: auto; }
-            }
-          `}} />
 
           {/* Printable Header for Paper */}
           <div className="hidden print:block mb-6 border-b-2 border-slate-800 pb-4 text-center">

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ConfirmerInvoice } from '../../types';
 import { X, Printer, CheckCircle2, Building, Calendar, User, FileText, Download } from 'lucide-react';
+import { triggerPrint } from '../../utils/printUtils';
 
 interface ConfirmerInvoicePrintViewProps {
   invoice: ConfirmerInvoice;
@@ -12,7 +13,7 @@ export const ConfirmerInvoicePrintView: React.FC<ConfirmerInvoicePrintViewProps>
   onClose
 }) => {
   const handlePrint = () => {
-    window.print();
+    triggerPrint({ printableElementId: 'printable-confirmer-invoice', title: `فاتورة_مؤكد_${invoice.invoiceNumber}` });
   };
 
   return (

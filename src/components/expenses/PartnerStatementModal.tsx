@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { Partner, PartnerTransaction } from '../../types';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
+import { triggerPrint } from '../../utils/printUtils';
 
 interface PartnerStatementModalProps {
   isOpen: boolean;
@@ -112,7 +113,7 @@ export function PartnerStatementModal({
   const netBalance = totalContributed - totalWithdrawn;
 
   const handlePrint = () => {
-    window.print();
+    triggerPrint({ printableElementId: 'printable-partner-statement', title: `كشف_حساب_${partner?.name || 'الشريك'}` });
   };
 
   const handleExportExcel = () => {
@@ -149,7 +150,7 @@ export function PartnerStatementModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto" dir="rtl">
-      <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-4 max-h-[92vh] flex flex-col">
+      <div id="printable-partner-statement" className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-4 max-h-[92vh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/90 shrink-0">
           <div className="flex items-center gap-3">
@@ -169,7 +170,7 @@ export function PartnerStatementModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 print:hidden">
             <button
               onClick={handleExportExcel}
               className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-xs flex items-center gap-1.5 transition-colors"
@@ -196,7 +197,7 @@ export function PartnerStatementModal({
         </div>
 
         {/* Filter bar */}
-        <div className="px-6 py-3 bg-slate-100/60 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="px-6 py-3 bg-slate-100/60 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 shrink-0 print:hidden">
           <div className="flex items-center gap-2">
             <Filter className="w-3.5 h-3.5 text-slate-400" />
             <span className="text-xs font-bold text-slate-600">الفترة الزمنية:</span>
@@ -253,6 +254,16 @@ export function PartnerStatementModal({
               {partner.phone}
             </div>
           )}
+        </div>
+
+        {/* Printable Only Header */}
+        <div className="hidden print:block p-6 pb-4 border-b-2 border-slate-900 text-center">
+          <h1 className="text-2xl font-black text-slate-900">كشف حساب الشريك: {partner.name}</h1>
+          <div className="text-xs font-bold text-slate-600 flex justify-center gap-6 mt-1">
+            <span>نسبة الحصة: {partner.sharePercentage || 50}%</span>
+            <span>تاريخ الاستخراج: {new Date().toLocaleDateString('ar-DZ')}</span>
+            <span>الفترة: {dateFilter === 'this_month' ? 'هذا الشهر' : dateFilter === 'last_month' ? 'الشهر السابق' : dateFilter === 'custom' ? `من ${startDate} إلى ${endDate}` : 'كافة الفترات'}</span>
+          </div>
         </div>
 
         {/* Executive Summary Cards */}

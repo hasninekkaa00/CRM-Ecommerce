@@ -3,6 +3,7 @@ import { X, Search, FileSpreadsheet, Printer, AlertTriangle, CheckCircle2, Packa
 import { useStore } from '../../store';
 import { calculateDynamicStock, calculateReturnedStock } from '../../utils/inventoryCalc';
 import toast from 'react-hot-toast';
+import { triggerPrint } from '../../utils/printUtils';
 
 interface InventoryAuditModalProps {
   isOpen: boolean;
@@ -248,14 +249,14 @@ export const InventoryAuditModal: React.FC<InventoryAuditModalProps> = ({ isOpen
 
   // Print Report
   const handlePrint = () => {
-    window.print();
+    triggerPrint({ printableElementId: 'printable-inventory-audit', title: `تقرير_تدقيق_المخزون_${new Date().toISOString().slice(0, 10)}` });
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto" dir="rtl">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[85vh] sm:max-h-[88vh] my-auto flex flex-col overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-200">
+      <div id="printable-inventory-audit" className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[85vh] sm:max-h-[88vh] my-auto flex flex-col overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-200">
         
         {/* Header Bar */}
         <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 print:hidden">

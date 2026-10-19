@@ -1,11 +1,14 @@
 import { ConsignmentSettlementsTab } from './ConsignmentSettlementsTab';
 import React, { useState } from 'react';
-import { Plus, Search, Users, FileText, Trash2, Edit2, DollarSign, PackagePlus, Eye, X, Calculator, CreditCard, History, CheckCircle2, ArrowUpRight, ArrowDownLeft, Filter } from 'lucide-react';
+import { Plus, Search, Users, FileText, Trash2, Edit2, DollarSign, PackagePlus, Eye, X, Calculator, CreditCard, History, CheckCircle2, ArrowUpRight, ArrowDownLeft, Filter, Printer } from 'lucide-react';
 import { useStore } from '../../store';
 import { Supplier, PurchaseInvoice, PurchaseInvoiceItem, SupplierPayment } from '../../types';
 import toast from 'react-hot-toast';
 import { checkSupplierDeletionIntegrity, checkPurchaseInvoiceDeletionIntegrity, IntegrityCheckResult } from '../../utils/dataIntegrity';
 import { IntegrityProtectionModal } from '../common/IntegrityProtectionModal';
+import { triggerPrint } from '../../utils/printUtils';
+import { SupplierPaymentVoucherModal } from './SupplierPaymentVoucherModal';
+import { SupplierPaymentsReportModal } from './SupplierPaymentsReportModal';
 
 export function PurchasesManager() {
   const [activeTab, setActiveTab] = useState<'invoices' | 'suppliers' | 'payments' | 'consignments'>('invoices');
@@ -176,6 +179,7 @@ export function PurchasesManager() {
             deleteSupplierPayment={deleteSupplierPayment}
             setDeleteConfirmModal={setDeleteConfirmModal}
             shippingInvoices={useStore.getState().shippingInvoices || []}
+            settings={settings}
           />
       )}
 
@@ -252,13 +256,15 @@ function calcSupplierStats(s: Supplier, purchaseInvoices: PurchaseInvoice[], sup
   return { invoices, payments, totalInvoices, totalPaid, debt };
 }
 
-function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplierPayment, deleteSupplierPayment, setDeleteConfirmModal, shippingInvoices = [] }: any) {
+function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplierPayment, deleteSupplierPayment, setDeleteConfirmModal, shippingInvoices = [], settings }: any) {
   const [isAdding, setIsAdding] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentData, setPaymentData] = useState({ supplierId: '', amount: 0, date: new Date().toISOString().split('T')[0], notes: '' });
+  const [viewingPaymentVoucher, setViewingPaymentVoucher] = useState<any | null>(null);
+  const [showPaymentsReportModal, setShowPaymentsReportModal] = useState(false);
 
   // حساب الدين المتبقي للمورد المختار في نموذج الدفع
   const selectedSupplierObj = suppliers.find((s: any) => String(s.id) === String(paymentData.supplierId));
@@ -320,7 +326,7 @@ function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplie
     });
   };
 
-  // تصفية سجل المدفوعات حسب المورد أو البحث
+  // تصفية سجل المدفوعات حسب المورد أو التاريخ أو البحث
   const filteredPayments = payments.filter((p: any) => {
     const supplier = suppliers.find((s: any) => s.id === p.supplierId);
     const sName = (supplier?.name || p.supplierName || '').toLowerCase();
@@ -328,9 +334,11 @@ function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplie
     const query = searchTerm.toLowerCase().trim();
 
     const matchesSupplierFilter = !selectedSupplierId || p.supplierId === selectedSupplierId || (supplier && supplier.id === selectedSupplierId);
-    const matchesQuery = !query || sName.includes(query) || notes.includes(query) || p.date.includes(query);
+    const matchesQuery = !query || sName.includes(query) || notes.includes(query) || p.date?.includes(query);
+    const matchesStartDate = !startDate || (p.date && p.date >= startDate);
+    const matchesEndDate = !endDate || (p.date && p.date <= endDate);
 
-    return matchesSupplierFilter && matchesQuery;
+    return matchesSupplierFilter && matchesQuery && matchesStartDate && matchesEndDate;
   });
 
   return (
@@ -364,9 +372,13 @@ function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplie
          </div>
 
          <div className="flex gap-2">
-           <button onClick={() => window.print()} className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden">
-             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect width="12" height="8" x="6" y="14"></rect></svg>
-             طباعة
+           <button 
+             onClick={() => setShowPaymentsReportModal(true)} 
+             className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden cursor-pointer"
+             title="معاينة وطباعة كشف وسجل مدفوعات الموردين"
+           >
+             <Printer className="w-4 h-4 text-emerald-400" />
+             طباعة كشف المدفوعات
            </button>
            <button onClick={() => setIsAdding(!isAdding)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden">
              <Plus className="w-5 h-5" />
@@ -465,18 +477,28 @@ function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplie
                      </div>
                   </div>
                </div>
-               <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
+               <div className="flex items-center justify-between md:justify-end gap-3 sm:gap-4 w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-100 flex-wrap">
                   <div className="text-right">
                     <div className="text-[10px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">المبلغ المدفوع</div>
                     <div className="text-xl font-black text-emerald-600" dir="ltr">+{Number(p.amount).toLocaleString()} <span className="text-xs font-bold">د.ج</span></div>
                   </div>
-                  <button 
-                    onClick={() => handleDeletePayment(p.id)} 
-                    className="text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 p-2.5 rounded-xl transition-colors border border-slate-200 hover:border-rose-200 print:hidden" 
-                    title="حذف الدفعة"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setViewingPaymentVoucher(p)} 
+                      className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 rounded-xl transition-colors border border-emerald-200 print:hidden flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-xs" 
+                      title="معاينة وطباعة سند صرف / وصل دفع للمورد"
+                    >
+                      <Printer className="w-4 h-4 text-emerald-600" />
+                      <span className="hidden sm:inline">طباعة وصل الدفعة</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDeletePayment(p.id)} 
+                      className="text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 p-2.5 rounded-xl transition-colors border border-slate-200 hover:border-rose-200 print:hidden cursor-pointer" 
+                      title="حذف الدفعة"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                </div>
             </div>
          )})}
@@ -488,6 +510,31 @@ function SupplierPaymentsTab({ payments, suppliers, purchaseInvoices, addSupplie
            </div>
          )}
        </div>
+
+        {/* Modal معاينة وطباعة كشف وسجل المدفوعات */}
+        {showPaymentsReportModal && (
+          <SupplierPaymentsReportModal
+            isOpen={showPaymentsReportModal}
+            onClose={() => setShowPaymentsReportModal(false)}
+            payments={filteredPayments}
+            suppliers={suppliers}
+            selectedSupplierId={selectedSupplierId}
+            startDate={startDate}
+            endDate={endDate}
+            storeName={settings?.storeName || 'إدارة المخزون والمشتريات'}
+          />
+        )}
+
+        {/* Modal معاينة وطباعة سند الصرف / وصل الدفعة */}
+        {viewingPaymentVoucher && (
+          <SupplierPaymentVoucherModal
+            isOpen={!!viewingPaymentVoucher}
+            onClose={() => setViewingPaymentVoucher(null)}
+            payment={viewingPaymentVoucher}
+            supplier={suppliers.find((s: any) => s.id === viewingPaymentVoucher.supplierId)}
+            storeName={settings?.storeName || 'إدارة المخزون والمشتريات'}
+          />
+        )}
     </div>
   );
 }
@@ -835,7 +882,7 @@ function SupplierStatementModal({ supplier, purchaseInvoices, supplierPayments, 
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir="rtl">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+      <div id="printable-supplier-statement" className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
@@ -921,8 +968,15 @@ function SupplierStatementModal({ supplier, purchaseInvoices, supplierPayments, 
            )}
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-           <button onClick={onClose} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors text-xs">إغلاق</button>
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between print:hidden">
+           <button 
+             onClick={() => triggerPrint({ printableElementId: 'printable-supplier-statement', title: `كشف_حساب_المورد_${supplier.name}` })}
+             className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors text-xs flex items-center gap-2 cursor-pointer shadow-sm"
+           >
+             <Printer className="w-4 h-4 text-emerald-400" />
+             <span>طباعة كشف الحساب</span>
+           </button>
+           <button onClick={onClose} className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors text-xs cursor-pointer">إغلاق</button>
         </div>
       </div>
     </div>
@@ -1268,8 +1322,12 @@ function InvoicesTab({ invoices, suppliers, supplierPayments, inventoryProducts,
         </div>
 
         <div className="flex gap-2">
-          <button onClick={() => window.print()} className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect width="12" height="8" x="6" y="14"></rect></svg>
+          <button 
+            onClick={() => triggerPrint({ printableElementId: 'printable-invoices-list', title: `سجل_فواتير_الشراء_${new Date().toISOString().split('T')[0]}` })} 
+            className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden cursor-pointer"
+            title="طباعة سجل فواتير الشراء"
+          >
+            <Printer className="w-4 h-4 text-emerald-400" />
             طباعة
           </button>
           <button onClick={handleOpenAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm print:hidden">
@@ -1646,7 +1704,7 @@ function InvoicesTab({ invoices, suppliers, supplierPayments, inventoryProducts,
 
       {viewSubInvoice && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+          <div id="printable-sub-invoice" className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
                  <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
@@ -1746,8 +1804,11 @@ function InvoicesTab({ invoices, suppliers, supplierPayments, inventoryProducts,
             </div>
             
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 print:hidden">
-               <button onClick={() => window.print()} className="px-6 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold rounded-xl transition-colors flex items-center gap-2">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect width="12" height="8" x="6" y="14"></rect></svg>
+               <button 
+                 onClick={() => triggerPrint({ printableElementId: 'printable-sub-invoice', title: `فاتورة_فرعية_${viewSubInvoice.subInv.subInvoiceNumber || viewSubInvoice.subInv.id}` })} 
+                 className="px-6 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+               >
+                 <Printer className="w-4 h-4 text-emerald-600" />
                  طباعة الفاتورة الفرعية
                </button>
                <button onClick={() => setViewSubInvoice(null)} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors">إغلاق</button>
@@ -1758,7 +1819,7 @@ function InvoicesTab({ invoices, suppliers, supplierPayments, inventoryProducts,
 
       {viewInvoice && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+          <div id="printable-purchase-invoice" className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
                  <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
@@ -1856,8 +1917,11 @@ function InvoicesTab({ invoices, suppliers, supplierPayments, inventoryProducts,
             </div>
             
             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 print:hidden">
-               <button onClick={() => window.print()} className="px-6 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold rounded-xl transition-colors flex items-center gap-2">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect width="12" height="8" x="6" y="14"></rect></svg>
+               <button 
+                 onClick={() => triggerPrint({ printableElementId: 'printable-purchase-invoice', title: `فاتورة_شراء_${viewInvoice.invoiceNumber || viewInvoice.id.slice(0,8)}` })} 
+                 className="px-6 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+               >
+                 <Printer className="w-4 h-4 text-emerald-600" />
                  طباعة الفاتورة
                </button>
                <button onClick={() => setViewInvoice(null)} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors">إغلاق</button>

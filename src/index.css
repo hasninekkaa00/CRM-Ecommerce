@@ -38,18 +38,167 @@ body {
 }
 
 @media print {
-  body {
-    background-color: white !important;
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 12mm 10mm;
   }
-  .print-hidden, 
-  nav, 
-  header, 
-  aside,
-  [role="navigation"] {
-    display: none !important;
+
+  /* 1. Global Reset: Eliminate layout/viewport height locks & overflow truncations */
+  html, body {
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
+
+  /* Unconstrain root containers and scroll areas */
+  #root,
+  #root > div,
+  .h-screen,
+  .h-full,
+  .max-h-screen,
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto,
   main {
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
     padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  /* 2. Hide all non-printable chrome and buttons */
+  nav,
+  header,
+  aside,
+  footer,
+  [role="navigation"],
+  .print-hidden,
+  .print\:hidden,
+  .no-print,
+  button:not(.printable-button),
+  input[type="file"],
+  .toast,
+  [data-hot-toast],
+  .fixed.bottom-0,
+  .fixed.bottom-4,
+  .fixed.bottom-6,
+  .fixed.bottom-20 {
+    display: none !important;
+  }
+
+  /* Unconstrain modal overlays and backdrops during print so they never clip or blank out */
+  .fixed.inset-0,
+  [class*="fixed"][class*="inset-0"] {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 3. Universal Modal Focus Mode (when in-place print is used) */
+  body.print-focus-mode > #root > div > aside,
+  body.print-focus-mode > #root > div > nav,
+  body.print-focus-mode > #root > div > header {
+    display: none !important;
+  }
+
+  body.print-focus-mode .print-focused-element {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print\:hidden,
+  .print-hidden,
+  .no-print,
+  button:not(.printable-button) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 4. Table & Pagination styles */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  th, td {
+    border-color: #cbd5e1 !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  .page-break-before {
+    page-break-before: always !important;
+    break-before: always !important;
+  }
+
+  .page-break-after {
+    page-break-after: always !important;
+    break-after: always !important;
+  }
+
+  .page-break-avoid,
+  .break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-box {
+    border: 2px solid #334155 !important;
+    width: 16px !important;
+    height: 16px !important;
+    display: inline-block !important;
+    border-radius: 3px !important;
   }
 }

@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { ViewOrderModal } from '../orders/ViewOrderModal';
 import { getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
 import { TablePagination } from '../common/TablePagination';
+import { ConsignmentExportModal } from './ConsignmentExportModal';
 
 interface Props {
   suppliers: Supplier[];
@@ -29,6 +30,7 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
   const [showDetails, setShowDetails] = useState(false);
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [lastCreatedInvoice, setLastCreatedInvoice] = useState<any>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Pagination state
   const [tablePage, setTablePage] = useState(1);
@@ -97,6 +99,7 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
   }, [deliveredUnsettledOrders, inventoryProducts, settings]);
 
   const selectedProduct = useMemo(() => inventoryProducts.find(p => p.id === selectedProductId), [inventoryProducts, selectedProductId]);
+  const selectedSupplier = useMemo(() => suppliers.find(s => s.id === selectedSupplierId) || null, [suppliers, selectedSupplierId]);
 
   // Filter matched orders based on selected product and date
   const matchedOrders = useMemo(() => {
@@ -224,72 +227,7 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
       toast.error('لا توجد بيانات للتصدير');
       return;
     }
-
-    const exportData: any[] = [];
-    matchedOrders.forEach(ao => {
-       const dateStr = ao.order.orderDate ? ao.order.orderDate.split('T')[0] : '';
-       const orderNum = ao.order.orderId || ao.order.id.slice(0, 8);
-       const tracking = ao.order.shippingTrackingId || ao.order.trackingNumber || '-';
-
-       if (ao.costInfo.breakdown && ao.costInfo.breakdown.length > 1) {
-         // Multi-variation order: list each variation with its exact individual cost
-         ao.costInfo.breakdown.forEach((item, itemIdx) => {
-           exportData.push({
-             'المنتج': item.productName || selectedProduct?.name || 'غير محدد',
-             'النوع (Variation)': item.variationName || `نوع ${itemIdx + 1}`,
-             'رمز التتبع': tracking,
-             'رقم الطلبية': orderNum,
-             'اسم الزبون': ao.order.fullName || '-',
-             'رقم الهاتف': ao.order.phone || '-',
-             'الولاية': ao.order.region || '-',
-             'تاريخ الطلبية': dateStr,
-             'الكمية': item.quantity,
-             'تكلفة الوحدة (د.ج)': item.unitCost,
-             'الإجمالي (د.ج)': item.totalCost
-           });
-         });
-       } else {
-         const qty = ao.costInfo.calculatedQuantity || Number(ao.order.qnts) || 1;
-         const uCost = ao.costInfo.unitCost || 0;
-         exportData.push({
-           'المنتج': ao.order.productName || selectedProduct?.name || 'غير محدد',
-           'النوع (Variation)': ao.costInfo.recognizedVariation?.name || ao.order.variation || '-',
-           'رمز التتبع': tracking,
-           'رقم الطلبية': orderNum,
-           'اسم الزبون': ao.order.fullName || '-',
-           'رقم الهاتف': ao.order.phone || '-',
-           'الولاية': ao.order.region || '-',
-           'تاريخ الطلبية': dateStr,
-           'الكمية': qty,
-           'تكلفة الوحدة (د.ج)': uCost,
-           'الإجمالي (د.ج)': ao.costInfo.totalCogs || (qty * uCost)
-         });
-       }
-    });
-    
-    // Calculate sums
-    const totalQty = exportData.reduce((sum, row) => sum + (Number(row['الكمية']) || 0), 0);
-    const totalCostAmount = exportData.reduce((sum, row) => sum + (Number(row['الإجمالي (د.ج)']) || 0), 0);
-    
-    // Add total row
-    exportData.push({
-      'المنتج': 'المجموع الكلي',
-      'النوع (Variation)': '',
-      'رمز التتبع': '',
-      'رقم الطلبية': '',
-      'اسم الزبون': '',
-      'رقم الهاتف': '',
-      'الولاية': '',
-      'تاريخ الطلبية': '',
-      'الكمية': totalQty,
-      'تكلفة الوحدة (د.ج)': '',
-      'الإجمالي (د.ج)': totalCostAmount
-    });
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-    XLSX.writeFile(wb, `Supplier_Orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+    setIsExportModalOpen(true);
   };
 
   const handleCreateSettlement = async () => {
@@ -695,11 +633,19 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
         <div className="lg:col-span-2 space-y-5">
           {selectedProductId && matchedOrders.length > 0 ? (
             <div className="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden">
-              <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 flex items-center justify-between">
+              <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 flex items-center justify-between flex-wrap gap-2">
                 <h4 className="font-bold text-emerald-900 flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                   تم العثور على {matchedOrders.length} طلبية مستلمة (تشمل جميع الأنواع)
                 </h4>
+                <button
+                  onClick={handleExportExcel}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                  title="تصدير كملف إكسل مع تخصيص كافة الأعمدة وسعر الشحن الحقيقي"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>تخصيص وتصدير إكسل</span>
+                </button>
               </div>
               
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -876,11 +822,11 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
                   <button
                     onClick={handleExportExcel}
                     disabled={matchedOrders.length === 0}
-                    className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl transition-colors flex items-center justify-center gap-2"
-                    title="تصدير كملف إكسل"
+                    className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    title="تصدير كملف إكسل مع تخصيص الأعمدة بما فيها سعر الشحن الحقيقي"
                   >
-                    <Download className="w-5 h-5" />
-                    تصدير
+                    <Download className="w-5 h-5 text-emerald-400" />
+                    <span>تخصيص وتصدير إكسل</span>
                   </button>
                 </div>
                 {totalCost <= 0 && (
@@ -915,6 +861,21 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
         <ViewOrderModal
           order={viewOrder}
           onClose={() => setViewOrder(null)}
+        />
+      )}
+      {isExportModalOpen && (
+        <ConsignmentExportModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          matchedOrders={matchedOrders}
+          selectedProduct={selectedProduct}
+          selectedSupplier={selectedSupplier}
+          settings={settings}
+          getOrderRelevantCost={getOrderRelevantCost}
+          getOrderRelevantQty={getOrderRelevantQty}
+          totalCost={totalCost}
+          totalQuantity={totalQuantity}
+          totalSalesRevenue={totalSalesRevenue}
         />
       )}
     </div>

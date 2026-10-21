@@ -52,6 +52,7 @@ import {
 import { checkOrderDeletionIntegrity, IntegrityCheckResult } from '../../utils/dataIntegrity';
 import { IntegrityProtectionModal } from '../common/IntegrityProtectionModal';
 import { resolveShippingDisplayNames, getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
+import { getOrderRowColorInfo } from '../../utils/statusColorUtils';
 
 const ALGERIA_WILAYAS = Object.entries(WILAYAS_MAP).map(([code, name]) => ({
   code,
@@ -2216,9 +2217,17 @@ export function OrdersList() {
               {paginatedOrders.map((order) => {
                 const isEditing = editingId === order.id;
                 const stopDeskStatus = getStopDeskStatus(isEditing && editDraft ? editDraft : order);
+                const rowColor = getOrderRowColorInfo(isEditing && editDraft ? editDraft : order, settings);
 
                 return (
-                  <tr key={order.id} className={`transition-colors border-b ${getRowStyle(order.status1)}`}>
+                  <tr 
+                    key={order.id} 
+                    style={{
+                      backgroundColor: rowColor.backgroundColor,
+                      color: rowColor.textColor,
+                    }}
+                    className="transition-colors border-b hover:brightness-[0.96]"
+                  >
                     <td className="p-2 text-center border-r border-gray-100/50" style={{ width: colWidths.select, minWidth: colWidths.select, maxWidth: colWidths.select }}>
                       <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={(e) => {
                         if (e.target.checked) setSelectedOrders([...selectedOrders, order.id]);
@@ -2301,7 +2310,7 @@ export function OrdersList() {
                         </div>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-extrabold bg-blue-50/10 text-blue-950 text-ellipsis overflow-hidden whitespace-nowrap" style={{ width: colWidths.region, minWidth: colWidths.region, maxWidth: colWidths.region }}>
+                    <td className="p-2 border-r border-gray-100 font-extrabold bg-transparent text-blue-950 text-ellipsis overflow-hidden whitespace-nowrap" style={{ width: colWidths.region, minWidth: colWidths.region, maxWidth: colWidths.region }}>
                       {isEditing && editDraft ? (
                         <select
                           value={getWilayaCode(editDraft.region)}
@@ -2535,7 +2544,7 @@ export function OrdersList() {
                         </span>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-emerald-50/10 font-black text-emerald-950" style={{ width: colWidths.priceWithoutDelivery, minWidth: colWidths.priceWithoutDelivery, maxWidth: colWidths.priceWithoutDelivery, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="p-2 border-r border-gray-100 bg-transparent font-black text-emerald-950" style={{ width: colWidths.priceWithoutDelivery, minWidth: colWidths.priceWithoutDelivery, maxWidth: colWidths.priceWithoutDelivery, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {isEditing && editDraft ? (
                         <input
                           type="number"
@@ -2551,7 +2560,7 @@ export function OrdersList() {
                         `${order.priceWithoutDelivery || 0} د.ج`
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-emerald-50/10 font-bold text-gray-800" style={{ width: colWidths.shippingMethod, minWidth: colWidths.shippingMethod, maxWidth: colWidths.shippingMethod, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="p-2 border-r border-gray-100 bg-transparent font-bold text-gray-800" style={{ width: colWidths.shippingMethod, minWidth: colWidths.shippingMethod, maxWidth: colWidths.shippingMethod, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {isEditing && editDraft ? (
                         <select
                           value={editDraft.shippingMethod || ''}
@@ -2584,7 +2593,7 @@ export function OrdersList() {
                         order.shippingMethod || '-'
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-emerald-50/10 font-black text-gray-900" style={{ width: colWidths.deliveryPrice, minWidth: colWidths.deliveryPrice, maxWidth: colWidths.deliveryPrice, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="p-2 border-r border-gray-100 bg-transparent font-black text-gray-900" style={{ width: colWidths.deliveryPrice, minWidth: colWidths.deliveryPrice, maxWidth: colWidths.deliveryPrice, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {isEditing && editDraft ? (
                         <input
                           type="number"
@@ -2600,7 +2609,7 @@ export function OrdersList() {
                         `${order.deliveryPrice || 0} د.ج`
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-extrabold text-blue-950 bg-blue-50/5" style={{ width: colWidths.totalCharge, minWidth: colWidths.totalCharge, maxWidth: colWidths.totalCharge, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="p-2 border-r border-gray-100 font-extrabold text-blue-950 bg-transparent" style={{ width: colWidths.totalCharge, minWidth: colWidths.totalCharge, maxWidth: colWidths.totalCharge, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {isEditing && editDraft ? (
                         <input
                           type="number"
@@ -2614,7 +2623,7 @@ export function OrdersList() {
                     </td>
 
                     {/* Editable Fields (Direct or Draft depending on editing state) */}
-                    <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.confirmedBy, minWidth: colWidths.confirmedBy, maxWidth: colWidths.confirmedBy }}>
+                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.confirmedBy, minWidth: colWidths.confirmedBy, maxWidth: colWidths.confirmedBy }}>
                       {confirmers.length > 0 ? (
                         <select
                           value={isEditing && editDraft ? (editDraft.confirmedBy || '') : (order.confirmedBy || '')}
@@ -2646,7 +2655,7 @@ export function OrdersList() {
                         />
                       )}
                     </td>
-                    <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.status1, minWidth: colWidths.status1, maxWidth: colWidths.status1 }}>
+                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.status1, minWidth: colWidths.status1, maxWidth: colWidths.status1 }}>
                       <select
                           value={isEditing && editDraft ? (editDraft.status1 || '') : (order.status1 || '')}
                           onChange={(e) => {
@@ -2664,7 +2673,7 @@ export function OrdersList() {
                           {status1Options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                     </td>
-                    <td className="p-1.5 bg-indigo-50/10 border-r border-indigo-50" style={{ width: colWidths.tag, minWidth: colWidths.tag, maxWidth: colWidths.tag }}>
+                    <td className="p-1.5 bg-transparent border-r border-indigo-50/30" style={{ width: colWidths.tag, minWidth: colWidths.tag, maxWidth: colWidths.tag }}>
                       <div className="flex flex-col gap-1 text-right">
                         <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar">
                           {getOrderTagsHistory(order, activeTags).length === 0 ? (
@@ -2731,7 +2740,7 @@ export function OrdersList() {
                         </div>
                       </div>
                     </td>
-                    <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.deliveryCompany, minWidth: colWidths.deliveryCompany, maxWidth: colWidths.deliveryCompany, overflow: 'visible' }}>
+                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.deliveryCompany, minWidth: colWidths.deliveryCompany, maxWidth: colWidths.deliveryCompany, overflow: 'visible' }}>
                       <div className="flex flex-col gap-1 w-full">
                         <select
                           value={isEditing && editDraft ? (editDraft.deliveryCompany || '') : (order.deliveryCompany || '')}
@@ -2844,7 +2853,7 @@ export function OrdersList() {
                         })()}
                       </div>
                     </td>
-                    <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.postponementDate, minWidth: colWidths.postponementDate, maxWidth: colWidths.postponementDate }}>
+                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.postponementDate, minWidth: colWidths.postponementDate, maxWidth: colWidths.postponementDate }}>
                       <input
                         type="date"
                         value={isEditing && editDraft ? (editDraft.postponementDate || '') : (order.postponementDate || '')}
@@ -2858,7 +2867,7 @@ export function OrdersList() {
                         className="w-full bg-white border border-gray-200 rounded px-1 py-0.5 text-[11px] font-bold focus:outline-none transition-colors text-center cursor-pointer"
                       />
                     </td>
-                    <td className="p-1.5 bg-blue-50/10 border-r border-blue-50" style={{ width: colWidths.status2, minWidth: colWidths.status2, maxWidth: colWidths.status2 }}>
+                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.status2, minWidth: colWidths.status2, maxWidth: colWidths.status2 }}>
                       <select
                         value={isEditing && editDraft ? (editDraft.status2 || '') : (order.status2 || '')}
                         onChange={(e) => {
@@ -2913,7 +2922,7 @@ export function OrdersList() {
                       )}
                     </td>
 
-                    <td className="p-2 text-center sticky left-0 bg-white z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.05)] transition-colors group-hover:bg-blue-50/50" style={{ width: colWidths.actions, minWidth: colWidths.actions, maxWidth: colWidths.actions }}>
+                    <td className="p-2 text-center sticky left-0 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.05)] transition-colors" style={{ width: colWidths.actions, minWidth: colWidths.actions, maxWidth: colWidths.actions, backgroundColor: rowColor.backgroundColor }}>
                       {isEditing ? (
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={handleSave} className="p-1 text-green-600 hover:bg-green-50 rounded" title="حفظ">

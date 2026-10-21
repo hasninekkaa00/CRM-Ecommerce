@@ -7,6 +7,7 @@ import {
   AppUser, ConfirmerInvoice, AutoAssignmentStrategy, OrderTag 
 } from '../types';
 import { DEFAULT_TAGS } from '../utils/tagUtils';
+import { DEFAULT_STATUS_COLORS } from '../utils/statusColorUtils';
 import { db, safeFirestoreWrite } from '../lib/firebase';
 import { collection, doc, setDoc, deleteDoc, updateDoc, writeBatch, arrayUnion } from 'firebase/firestore';
 import { fetchCompanyFeesAPI, getWilayaFeeFromFeesData, extractWilayaCode, isStopDeskOrder, calculateDefaultShippingFee, resolveOrderRealShippingPrice, getEffectiveShippingCost } from '../utils/shippingFees';
@@ -264,6 +265,7 @@ export interface AppState {
   addTag: (tag: OrderTag) => Promise<void>;
   removeTag: (tagName: string) => Promise<void>;
   updateTag: (oldName: string, updatedTag: OrderTag) => Promise<void>;
+  resetTagsToDefault: () => Promise<void>;
 
   addExpense: (expense: Expense) => Promise<void>;
   updateExpense: (id: string, updates: Partial<Expense>) => Promise<void>;
@@ -308,6 +310,18 @@ export interface AppState {
   deduplicateAbandonedOrders: () => Promise<{ mergedCount: number; deletedCount: number }>;
 }
 
+const getInitialSettings = (): SystemSettings | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem('app_system_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) {}
+  return null;
+};
+
 export const useStore = create<AppState>()((set, get) => ({
   notes: [],
   orders: [],
@@ -316,7 +330,7 @@ export const useStore = create<AppState>()((set, get) => ({
   campaignRecords: [],
   campaignFields: [],
   salesChannels: [],
-  settings: null,
+  settings: getInitialSettings(),
   expenses: [],
   partners: [],
   partnerTransactions: [],
@@ -393,7 +407,14 @@ export const useStore = create<AppState>()((set, get) => ({
   setCampaignRecords: (campaignRecords) => set((state) => (state.campaignRecords === campaignRecords ? state : { campaignRecords })),
   setCampaignFields: (campaignFields) => set((state) => (state.campaignFields === campaignFields ? state : { campaignFields })),
   setSalesChannels: (salesChannels) => set((state) => (state.salesChannels === salesChannels ? state : { salesChannels })),
-  setSettings: (settings) => set((state) => (state.settings === settings ? state : { settings })),
+  setSettings: (settings) => {
+    if (settings) {
+      try {
+        localStorage.setItem('app_system_settings', JSON.stringify(settings));
+      } catch (e) {}
+    }
+    set((state) => (state.settings === settings ? state : { settings }));
+  },
   setExpenses: (expenses) => set((state) => (state.expenses === expenses ? state : { expenses })),
   setPartners: (partners) => set((state) => (state.partners === partners ? state : { partners })),
   setPartnerTransactions: (partnerTransactions) => set((state) => (state.partnerTransactions === partnerTransactions ? state : { partnerTransactions })),
@@ -1543,6 +1564,13 @@ export const useStore = create<AppState>()((set, get) => ({
       status2Options: ['قيد التجهيز', 'تم الشحن', 'في الطريق', 'مستلم', 'مرتجع', 'قابلة للشحن'],
       deliveryCompanies: ['أرامكس', 'سمسا', 'ياليدين', 'مايان', 'زاجل', 'توصيل محلي'],
       confirmers: [],
+      inventoryManagementMode: 'local',
+      tags: DEFAULT_TAGS,
+      statusColors: DEFAULT_STATUS_COLORS,
+      returnCostMode: 'per_order',
+      returnMonthlySubscription: 0,
+      returnCost: 400,
+      orderRowColorMode: 'auto',
     };
     
     // Construct complete non-partial object to satisfy all schema requirements and allow complete array overrides
@@ -1557,7 +1585,7 @@ export const useStore = create<AppState>()((set, get) => ({
       defaultDeliveryCompany: updates.defaultDeliveryCompany !== undefined ? updates.defaultDeliveryCompany : (currentSettings.defaultDeliveryCompany || ''),
       defaultConfirmedBy: updates.defaultConfirmedBy !== undefined ? updates.defaultConfirmedBy : (currentSettings.defaultConfirmedBy || ''),
       productCosts: updates.productCosts !== undefined ? updates.productCosts : currentSettings.productCosts,
-      returnCost: updates.returnCost !== undefined ? updates.returnCost : currentSettings.returnCost,
+      returnCost: updates.returnCost !== undefined ? updates.returnCost : (currentSettings.returnCost ?? 400),
       returnCostMode: updates.returnCostMode !== undefined ? updates.returnCostMode : (currentSettings.returnCostMode || 'per_order'),
       returnMonthlySubscription: updates.returnMonthlySubscription !== undefined ? updates.returnMonthlySubscription : (currentSettings.returnMonthlySubscription || 0),
       exchangeRate: updates.exchangeRate !== undefined ? updates.exchangeRate : currentSettings.exchangeRate,
@@ -1582,10 +1610,16 @@ export const useStore = create<AppState>()((set, get) => ({
       smsTwilioNumber: updates.smsTwilioNumber !== undefined ? updates.smsTwilioNumber : currentSettings.smsTwilioNumber,
       smsTemplates: updates.smsTemplates !== undefined ? updates.smsTemplates : currentSettings.smsTemplates,
       smsAutoSendOnStatus: updates.smsAutoSendOnStatus !== undefined ? updates.smsAutoSendOnStatus : currentSettings.smsAutoSendOnStatus,
-      tags: updates.tags !== undefined ? updates.tags : currentSettings.tags,
+      tags: updates.tags !== undefined ? updates.tags : (currentSettings.tags !== undefined ? currentSettings.tags : DEFAULT_TAGS),
+      statusColors: updates.statusColors !== undefined ? { ...(currentSettings.statusColors || DEFAULT_STATUS_COLORS), ...updates.statusColors } : (currentSettings.statusColors || DEFAULT_STATUS_COLORS),
+      orderRowColorMode: updates.orderRowColorMode !== undefined ? updates.orderRowColorMode : (currentSettings.orderRowColorMode || 'auto'),
     };
 
     set({ settings: newSettings });
+
+    try {
+      localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
+    } catch (e) {}
 
     const plainSettings = JSON.parse(JSON.stringify(newSettings));
     delete plainSettings.id;
@@ -1623,6 +1657,10 @@ export const useStore = create<AppState>()((set, get) => ({
     const newSettings = { ...currentSettings, tags: updatedTags };
     set({ settings: newSettings });
 
+    try {
+      localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
+    } catch (e) {}
+
     await safeFirestoreWrite(
       () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
       'addTag'
@@ -1637,6 +1675,10 @@ export const useStore = create<AppState>()((set, get) => ({
 
     const newSettings = { ...currentSettings, tags: updatedTags };
     set({ settings: newSettings });
+
+    try {
+      localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
+    } catch (e) {}
 
     await safeFirestoreWrite(
       () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
@@ -1653,9 +1695,29 @@ export const useStore = create<AppState>()((set, get) => ({
     const newSettings = { ...currentSettings, tags: updatedTags };
     set({ settings: newSettings });
 
+    try {
+      localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
+    } catch (e) {}
+
     await safeFirestoreWrite(
       () => setDoc(doc(db, 'settings', 'general'), { tags: updatedTags }, { merge: true }),
       'updateTag'
+    );
+  },
+
+  resetTagsToDefault: async () => {
+    const state = get();
+    const currentSettings = state.settings || {} as SystemSettings;
+    const newSettings = { ...currentSettings, tags: [...DEFAULT_TAGS] };
+    set({ settings: newSettings });
+
+    try {
+      localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
+    } catch (e) {}
+
+    await safeFirestoreWrite(
+      () => setDoc(doc(db, 'settings', 'general'), { tags: DEFAULT_TAGS }, { merge: true }),
+      'resetTagsToDefault'
     );
   },
 

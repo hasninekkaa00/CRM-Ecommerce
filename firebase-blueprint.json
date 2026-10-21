@@ -113,7 +113,10 @@
         "defaultConfirmedBy": { "type": "string" },
         "returnCost": { "type": "number" },
         "returnCostMode": { "type": "string" },
-        "returnMonthlySubscription": { "type": "number" }
+        "returnMonthlySubscription": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "object" } },
+        "statusColors": { "type": "object" },
+        "orderRowColorMode": { "type": "string" }
       },
       "required": ["status1Options", "status2Options", "deliveryCompanies", "confirmers"]
     },

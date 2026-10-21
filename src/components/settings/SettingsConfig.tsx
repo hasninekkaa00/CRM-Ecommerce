@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { Plus, Trash2, Save, Edit2, Check, X, MessageSquare, Key, Phone, Tag, Home, LayoutGrid, LayoutDashboard, ShoppingCart, Truck, Navigation, Ghost, Package, Contact, Megaphone, DollarSign, Wallet, Target, Store, Users, Settings as SettingsIcon, BarChart3, Building, Headphones, Facebook, CheckCircle2, RefreshCw, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Save, Edit2, Check, X, MessageSquare, Key, Phone, Tag, Home, LayoutGrid, LayoutDashboard, ShoppingCart, Truck, Navigation, Ghost, Package, Contact, Megaphone, DollarSign, Wallet, Target, Store, Users, Settings as SettingsIcon, BarChart3, Building, Headphones, Facebook, CheckCircle2, RefreshCw, Eye, EyeOff, ShieldCheck, Palette, RotateCcw, Database } from 'lucide-react';
 import { SystemSettings, OrderTag, ViewState } from '../../types';
 import toast from 'react-hot-toast';
+import { StatusColorEditor } from './StatusColorEditor';
+import { DEFAULT_STATUS_COLORS } from '../../utils/statusColorUtils';
 
 export const LANDING_PAGE_OPTIONS: { id: ViewState; name: string; desc: string; category: string; icon: any }[] = [
   { id: 'sections', name: 'شبكة الأقسام والتطبيقات (App Sections Grid)', desc: 'يفتح التطبيق مباشرة على شبكة متكاملة لجميع الأقسام والأدوات للاختيار السريع', category: 'الواجهة العامة', icon: LayoutGrid },
@@ -59,9 +61,10 @@ interface TagsEditorProps {
   onAdd: (name: string, color: string) => void;
   onRemove: (name: string) => void;
   onEdit: (oldName: string, newName: string, newColor: string) => void;
+  onReset?: () => void;
 }
 
-function TagsEditor({ tags, onAdd, onRemove, onEdit }: TagsEditorProps) {
+function TagsEditor({ tags, onAdd, onRemove, onEdit, onReset }: TagsEditorProps) {
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TAG_COLOR_PRESETS[0].color);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -100,11 +103,31 @@ function TagsEditor({ tags, onAdd, onRemove, onEdit }: TagsEditorProps) {
 
   return (
     <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 col-span-1 md:col-span-2 text-right mt-4" dir="rtl">
-      <h3 className="font-extrabold text-gray-800 text-base mb-1 flex items-center gap-2">
-        <Tag className="w-5 h-5 text-indigo-500" />
-        إدارة تاغات الطلبيات المخصصة
-      </h3>
-      <p className="text-xs text-gray-500 mb-4">أضف، عدل أو احذف تاغات الطلبيات المخصصة، واختر ألوانها لتظهر في جداول وتفاصيل الطلبيات.</p>
+      <div className="flex items-center justify-between border-b pb-3 mb-4">
+        <div>
+          <h3 className="font-extrabold text-gray-800 text-base flex items-center gap-2">
+            <Tag className="w-5 h-5 text-indigo-500" />
+            إدارة تاغات الطلبيات المخصصة
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">أضف، عدل أو احذف تاغات الطلبيات المخصصة، وتُحفظ جميع التغييرات مباشرة في قاعدة البيانات.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-100">
+            {tags.length} تاغات
+          </span>
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="text-xs text-gray-500 hover:text-indigo-600 font-bold border border-gray-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+              title="استعادة التاغات الافتراضية"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>استعادة الافتراضية</span>
+            </button>
+          )}
+        </div>
+      </div>
       
       <div className="flex flex-col md:flex-row gap-3 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
         <div className="flex-1 flex flex-col gap-1.5">
@@ -425,7 +448,13 @@ export function SettingsConfig() {
   const [status2, setStatus2] = useState<string[]>(settings?.status2Options || []);
   const [delivery, setDelivery] = useState<string[]>(settings?.deliveryCompanies || []);
   const [confirmers, setConfirmers] = useState<string[]>(settings?.confirmers || []);
-  const [tags, setTags] = useState<OrderTag[]>(settings?.tags || DEFAULT_TAGS);
+  const [tags, setTags] = useState<OrderTag[]>(settings?.tags !== undefined ? settings.tags : DEFAULT_TAGS);
+  const [statusColors, setStatusColors] = useState<Record<string, string>>(settings?.statusColors || DEFAULT_STATUS_COLORS);
+  const [orderRowColorMode, setOrderRowColorMode] = useState<'auto' | 'status1' | 'status2'>(settings?.orderRowColorMode || 'auto');
+  const [returnCostMode, setReturnCostMode] = useState<'per_order' | 'monthly_subscription'>(settings?.returnCostMode || 'per_order');
+  const [returnMonthlySub, setReturnMonthlySub] = useState<number>(settings?.returnMonthlySubscription || 0);
+  const [returnCost, setReturnCost] = useState<number>(settings?.returnCost ?? 400);
+  const [isSavingAll, setIsSavingAll] = useState(false);
 
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [themeForm, setThemeForm] = useState<any>({
@@ -462,8 +491,25 @@ export function SettingsConfig() {
       setStatus2(mergedS2);
       setDelivery(settings.deliveryCompanies || []);
       setConfirmers(settings.confirmers || []);
-      setTags(settings.tags || DEFAULT_TAGS);
+      if (settings.tags !== undefined) {
+        setTags(settings.tags);
+      }
       setMetaTokenInput(settings.metaAdsToken || '');
+      if (settings.statusColors) {
+        setStatusColors(settings.statusColors);
+      }
+      if (settings.orderRowColorMode) {
+        setOrderRowColorMode(settings.orderRowColorMode);
+      }
+      if (settings.returnCostMode !== undefined) {
+        setReturnCostMode(settings.returnCostMode);
+      }
+      if (settings.returnMonthlySubscription !== undefined) {
+        setReturnMonthlySub(settings.returnMonthlySubscription);
+      }
+      if (settings.returnCost !== undefined) {
+        setReturnCost(settings.returnCost);
+      }
     }
   }, [settings]);
 
@@ -539,43 +585,88 @@ export function SettingsConfig() {
     toast.success('تم مسح التوكن المحفوظ بنجاح');
   };
 
-  const handleAddTag = (name: string, color: string) => {
-    if (name && !tags.some(t => t.name === name)) {
-      const updated = [...tags, { name, color }];
-      setTags(updated);
-      updateSettings({ tags: updated });
+  const handleUpdateStatusColor = async (status: string, color: string) => {
+    const updated = {
+      ...statusColors,
+      [status]: color,
+    };
+    setStatusColors(updated);
+    await updateSettings({ statusColors: updated });
+    toast.success(`تم حفظ لون الحالة "${status}" في قاعدة البيانات!`);
+  };
+
+  const handleResetStatusColors = async () => {
+    if (window.confirm('هل تريد استعادة جميع ألوان الحالات إلى الألوان الافتراضية؟')) {
+      setStatusColors(DEFAULT_STATUS_COLORS);
+      await updateSettings({ statusColors: DEFAULT_STATUS_COLORS });
+      toast.success('تمت استعادة ألوان الحالات الافتراضية بنجاح!');
     }
   };
 
-  const handleRemoveTag = (name: string) => {
-    const updated = tags.filter(t => t.name !== name);
-    setTags(updated);
-    updateSettings({ tags: updated });
+  const handleAddTag = async (name: string, color: string) => {
+    const trimmed = name.trim();
+    if (trimmed && !tags.some(t => t.name.toLowerCase() === trimmed.toLowerCase())) {
+      const updated = [...tags, { name: trimmed, color }];
+      setTags(updated);
+      await updateSettings({ tags: updated });
+      toast.success(`تم حفظ التاغ "${trimmed}" في قاعدة البيانات!`);
+    }
   };
 
-  const handleEditTag = (oldName: string, newName: string, newColor: string) => {
-    const updated = tags.map(t => t.name === oldName ? { name: newName, color: newColor } : t);
+  const handleRemoveTag = async (name: string) => {
+    const updated = tags.filter(t => t.name !== name);
     setTags(updated);
-    updateSettings({ tags: updated });
+    await updateSettings({ tags: updated });
+    toast.success(`تم حذف التاغ "${name}" وتحديث قاعدة البيانات`);
+  };
+
+  const handleEditTag = async (oldName: string, newName: string, newColor: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const updated = tags.map(t => t.name === oldName ? { name: trimmed, color: newColor } : t);
+    setTags(updated);
+    await updateSettings({ tags: updated });
+    toast.success(`تم تعديل التاغ وحفظه في قاعدة البيانات!`);
+  };
+
+  const handleResetTags = async () => {
+    if (window.confirm('هل تريد استعادة قائمة التاغات الافتراضية؟')) {
+      setTags([...DEFAULT_TAGS]);
+      await updateSettings({ tags: [...DEFAULT_TAGS] });
+      toast.success('تمت استعادة التاغات الافتراضية وحفظها بنجاح!');
+    }
   };
 
   if (!settings) {
-    return <div className="p-4 text-center">جاري التحميل...</div>;
+    return <div className="p-4 text-center font-bold text-gray-500">جاري تحميل إعدادات النظام من السحابة...</div>;
   }
 
-  const handleManualSave = () => {
-    // Force merging of immutable values to protect system logic
-    const finalStatus1 = Array.from(new Set([...IMMUTABLE_STATUS1, ...status1]));
-    const finalStatus2 = Array.from(new Set([...IMMUTABLE_STATUS2, ...status2]));
+  const handleManualSave = async () => {
+    setIsSavingAll(true);
+    try {
+      // Force merging of immutable values to protect system logic
+      const finalStatus1 = Array.from(new Set([...IMMUTABLE_STATUS1, ...status1]));
+      const finalStatus2 = Array.from(new Set([...IMMUTABLE_STATUS2, ...status2]));
 
-    updateSettings({
-      status1Options: finalStatus1,
-      status2Options: finalStatus2,
-      deliveryCompanies: delivery,
-      confirmers: confirmers,
-      tags: tags,
-    });
-    alert('تم حفظ الإعدادات بنجاح في قاعدة البيانات!');
+      await updateSettings({
+        status1Options: finalStatus1,
+        status2Options: finalStatus2,
+        deliveryCompanies: delivery,
+        confirmers: confirmers,
+        tags: tags,
+        statusColors: statusColors,
+        orderRowColorMode: orderRowColorMode,
+        returnCostMode: returnCostMode,
+        returnMonthlySubscription: Number(returnMonthlySub) || 0,
+        returnCost: Number(returnCost) || 0,
+      });
+      toast.success('تم حفظ كافة التغييرات والألوان وطريقة احتساب المرتجع في قاعدة البيانات بنجاح! 💾');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsSavingAll(false);
+    }
   };
 
   const handleAddItem = (
@@ -676,11 +767,176 @@ export function SettingsConfig() {
         </div>
         <button 
           onClick={handleManualSave}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition flex items-center justify-center gap-2"
+          disabled={isSavingAll}
+          className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2.5 px-6 rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
         >
-          <Save className="w-4 h-4" />
-          حفظ التغييرات
+          {isSavingAll ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>جاري الحفظ في السحابة...</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              <span>حفظ التغييرات في السحابة</span>
+            </>
+          )}
         </button>
+      </div>
+
+      {/* 🎨 إعداد نظام تلوين سطر الطلبيات بالكامل حسب الحالة */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mt-2 text-right animate-fadeIn" id="order-row-colors-config">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+              <Palette className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-gray-900 text-lg">
+                نظام تلوين سطر الطلبية بالكامل حسب حالتها (Order Row Color System)
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                تحديد لون خلفية سطر الطلبية في جدول إدارة المبيعات لتمييز الحالات فورياً (مثل تمييز المرتجع بالوردي، المستلم بالأخضر، الملغى بالأحمر).
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleResetStatusColors}
+            className="text-xs font-bold text-gray-600 hover:text-indigo-600 border border-gray-200 hover:border-indigo-300 bg-gray-50 hover:bg-indigo-50/50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+            title="استعادة الألوان الافتراضية لكافة الحالات"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>استعادة الألوان الافتراضية</span>
+          </button>
+        </div>
+
+        {/* اختيار منطق تلوين السطر */}
+        <div className="mb-5">
+          <label className="block text-xs font-bold text-gray-700 mb-2.5">
+            اختر الحالة المعتمدة في تلوين خلفية سطر الطلبية:
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                setOrderRowColorMode('auto');
+                await updateSettings({ orderRowColorMode: 'auto' });
+                toast.success('تم تفعيل وضع التلوين التلقائي الذكي وحفظه في السحابة!');
+              }}
+              className={`p-3.5 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
+                orderRowColorMode === 'auto'
+                  ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <span className="text-xl">✨</span>
+              <div>
+                <span className="block font-black text-xs text-gray-900">تلقائي ذكي (موصى به)</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5">الأولوية لحالة الشحن (مرتجع / مستلم / تم الشحن)، وإلا حالة التأكيد</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setOrderRowColorMode('status1');
+                await updateSettings({ orderRowColorMode: 'status1' });
+                toast.success('تم اعتماد لون حالة التأكيد (1) لتلوين السطر!');
+              }}
+              className={`p-3.5 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
+                orderRowColorMode === 'status1'
+                  ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <span className="text-xl">📞</span>
+              <div>
+                <span className="block font-black text-xs text-gray-900">حالة التأكيد (الحالة 1)</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5">تلوين السطر دائماً بلون حالة التأكيد الأساسية (مؤكد، ملغى، مؤجل، إلخ)</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setOrderRowColorMode('status2');
+                await updateSettings({ orderRowColorMode: 'status2' });
+                toast.success('تم اعتماد لون حالة الشحن (2) لتلوين السطر!');
+              }}
+              className={`p-3.5 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
+                orderRowColorMode === 'status2'
+                  ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                  : 'bg-white border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <span className="text-xl">🚚</span>
+              <div>
+                <span className="block font-black text-xs text-gray-900">حالة الشحن والتوصيل (الحالة 2)</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5">تلوين السطر دائماً بلون حالة شركة التوصيل (مستلم، مرتجع، قيد التجهيز)</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* معاينة تفاعلية حية لسطر الطلبية */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-700">معاينة حية لشكل سطر الطلبية بالجدول:</span>
+            <span className="text-[11px] text-indigo-600 font-bold bg-white px-2 py-0.5 rounded border border-indigo-100">
+              الوضع الحالي: {orderRowColorMode === 'auto' ? 'تلقائي ذكي' : orderRowColorMode === 'status1' ? 'حالة التأكيد 1' : 'حالة الشحن 2'}
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-gray-300 bg-white">
+            <table className="w-full text-xs text-right border-collapse">
+              <thead>
+                <tr className="bg-gray-100 text-gray-600 font-bold border-b">
+                  <th className="p-2">رقم الطلبية</th>
+                  <th className="p-2">الزبون</th>
+                  <th className="p-2">الهاتف</th>
+                  <th className="p-2">الولاية</th>
+                  <th className="p-2">حالة التأكيد (1)</th>
+                  <th className="p-2">حالة الشحن (2)</th>
+                  <th className="p-2">المبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { id: '1001', name: 'أحمد علي', phone: '0555123456', wilaya: '16 - الجزائر', s1: 'مؤكد', s2: 'مستلم', total: '4,500 د.ج' },
+                  { id: '1002', name: 'سمير بن يحيى', phone: '0661987654', wilaya: '31 - وهران', s1: 'مؤكد', s2: 'مرتجع', total: '3,800 د.ج' },
+                  { id: '1003', name: 'ياسين كريم', phone: '0770543210', wilaya: '25 - قسنطينة', s1: 'قيد المراجعة', s2: 'قيد التجهيز', total: '6,200 د.ج' },
+                  { id: '1004', name: 'خالد مراد', phone: '0540112233', wilaya: '19 - سطيف', s1: 'ملغى', s2: '', total: '2,900 د.ج' },
+                ].map(demo => {
+                  const targetStatus = orderRowColorMode === 'status1' 
+                    ? demo.s1 
+                    : orderRowColorMode === 'status2' 
+                    ? (demo.s2 || demo.s1)
+                    : (demo.s2 && ['مرتجع', 'مستلم', 'تم الشحن'].includes(demo.s2) ? demo.s2 : demo.s1);
+                  const demoBg = statusColors[targetStatus] || DEFAULT_STATUS_COLORS[targetStatus] || '#ffffff';
+                  return (
+                    <tr 
+                      key={demo.id} 
+                      style={{ backgroundColor: demoBg }} 
+                      className="border-b transition-colors"
+                    >
+                      <td className="p-2 font-mono font-bold">#{demo.id}</td>
+                      <td className="p-2 font-extrabold">{demo.name}</td>
+                      <td className="p-2 font-mono text-blue-700" dir="ltr">{demo.phone}</td>
+                      <td className="p-2">{demo.wilaya}</td>
+                      <td className="p-2 font-bold">{demo.s1}</td>
+                      <td className="p-2 font-bold">{demo.s2 || '-'}</td>
+                      <td className="p-2 font-black">{demo.total}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-2">
+            💡 يمكنك النقر على زر "تلوين" أمام أي حالة أدناه لتعديل لونها، وسيتم تطبيق اللون فورياً على كافة الأسطر في جدول الطلبيات وحفظه في السحابة.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -701,19 +957,23 @@ export function SettingsConfig() {
           onRemove={(val) => handleRemoveItem(val, confirmers, setConfirmers, 'confirmers')}
           onEdit={(oldVal, newVal) => handleEditItem(oldVal, newVal, confirmers, setConfirmers, 'confirmers')}
         />
-        <ArrayEditor 
-          title="حالات الطلبية المُخصصة (1)"
-          desc="تظهر كخيارات للحالة الأساسية (مثل: مؤكد، ملغى)"
+        <StatusColorEditor 
+          title="حالات التأكيد (الحالة 1) وألوان سطر الطلبية"
+          desc="تظهر كخيارات للحالة الأساسية (مثل: مؤكد، ملغى) وتحدد لون السطر الكامل"
           items={status1}
+          statusColors={statusColors}
+          onUpdateColor={handleUpdateStatusColor}
           onAdd={(val) => handleAddItem(val, status1, setStatus1, 'status1Options')}
           onRemove={(val) => handleRemoveItem(val, status1, setStatus1, 'status1Options')}
           onEdit={(oldVal, newVal) => handleEditItem(oldVal, newVal, status1, setStatus1, 'status1Options')}
           immutableItems={IMMUTABLE_STATUS1}
         />
-        <ArrayEditor 
-          title="حالات الطلبية المُخصصة (2)"
-          desc="تظهر كخيارات لحالة الشحن والإرجاع (مثل: مستلم، مرتجع)"
+        <StatusColorEditor 
+          title="حالات الشحن والتوصيل (الحالة 2) وألوان سطر الطلبية"
+          desc="تظهر كخيارات لحالة الشحن والإرجاع (مثل: مستلم، مرتجع) وتحدد لون السطر الكامل"
           items={status2}
+          statusColors={statusColors}
+          onUpdateColor={handleUpdateStatusColor}
           onAdd={(val) => handleAddItem(val, status2, setStatus2, 'status2Options')}
           onRemove={(val) => handleRemoveItem(val, status2, setStatus2, 'status2Options')}
           onEdit={(oldVal, newVal) => handleEditItem(oldVal, newVal, status2, setStatus2, 'status2Options')}
@@ -724,6 +984,7 @@ export function SettingsConfig() {
           onAdd={handleAddTag}
           onRemove={handleRemoveTag}
           onEdit={handleEditTag}
+          onReset={handleResetTags}
         />
       </div>
 
@@ -952,11 +1213,11 @@ export function SettingsConfig() {
           </div>
 
           <span className={`text-xs font-black px-3 py-1.5 rounded-lg border ${
-            settings?.returnCostMode === 'monthly_subscription'
+            returnCostMode === 'monthly_subscription'
               ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
               : 'bg-amber-50 text-amber-800 border-amber-200'
           }`}>
-            {settings?.returnCostMode === 'monthly_subscription' ? 'مفعل: اشتراك شهري ثابت' : 'مفعل: دفع لكل طلبية'}
+            {returnCostMode === 'monthly_subscription' ? 'مفعل: اشتراك شهري ثابت' : 'مفعل: دفع لكل طلبية'}
           </span>
         </div>
 
@@ -968,12 +1229,17 @@ export function SettingsConfig() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
             <button
               type="button"
-              onClick={() => {
-                updateSettings({ returnCostMode: 'per_order' });
-                toast.success('تم تفعيل نظام الدفع لكل طلبية مرتجعة');
+              onClick={async () => {
+                setReturnCostMode('per_order');
+                await updateSettings({ 
+                  returnCostMode: 'per_order',
+                  returnCost: returnCost,
+                  returnMonthlySubscription: returnMonthlySub,
+                });
+                toast.success('تم تفعيل نظام الدفع لكل طلبية مرتجعة وحفظه في السحابة بنجاح! 📦');
               }}
               className={`p-4 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
-                settings?.returnCostMode !== 'monthly_subscription'
+                returnCostMode !== 'monthly_subscription'
                   ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
                   : 'bg-white border-gray-200 hover:border-gray-300'
               }`}
@@ -981,18 +1247,23 @@ export function SettingsConfig() {
               <span className="text-2xl">📦</span>
               <div>
                 <span className="block font-black text-sm text-gray-900">دفع لكل طلبية مرتجعة</span>
-                <span className="block text-xs text-gray-500 mt-1">يتم خصم مبلغ محدد عن كل طرد مرتجع (افتراضياً {settings?.returnCost || 400} د.ج)</span>
+                <span className="block text-xs text-gray-500 mt-1">يتم خصم مبلغ محدد عن كل طرد مرتجع (افتراضياً {returnCost || 400} د.ج)</span>
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                updateSettings({ returnCostMode: 'monthly_subscription' });
-                toast.success('تم تفعيل نظام الاشتراك الشهري الثابت للمرتجع');
+              onClick={async () => {
+                setReturnCostMode('monthly_subscription');
+                await updateSettings({ 
+                  returnCostMode: 'monthly_subscription',
+                  returnMonthlySubscription: returnMonthlySub,
+                  returnCost: returnCost,
+                });
+                toast.success('تم تفعيل نظام الاشتراك الشهري الثابت للمرتجع وحفظه في السحابة بنجاح! 📅');
               }}
               className={`p-4 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
-                settings?.returnCostMode === 'monthly_subscription'
+                returnCostMode === 'monthly_subscription'
                   ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
                   : 'bg-white border-gray-200 hover:border-gray-300'
               }`}
@@ -1016,8 +1287,15 @@ export function SettingsConfig() {
               <input
                 type="number"
                 min="0"
-                value={settings?.returnMonthlySubscription !== undefined ? settings.returnMonthlySubscription : ''}
-                onChange={(e) => updateSettings({ returnMonthlySubscription: Number(e.target.value) || 0 })}
+                value={returnMonthlySub}
+                onChange={(e) => setReturnMonthlySub(Number(e.target.value) || 0)}
+                onBlur={async () => {
+                  await updateSettings({ 
+                    returnMonthlySubscription: Number(returnMonthlySub) || 0,
+                    returnCostMode: returnCostMode,
+                  });
+                  toast.success('تم حفظ قيمة الاشتراك الشهري للمرتجع في قاعدة البيانات');
+                }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-bold"
                 placeholder="مثال: 5000"
               />
@@ -1036,8 +1314,15 @@ export function SettingsConfig() {
               <input
                 type="number"
                 min="0"
-                value={settings?.returnCost !== undefined ? settings.returnCost : 400}
-                onChange={(e) => updateSettings({ returnCost: Number(e.target.value) || 0 })}
+                value={returnCost}
+                onChange={(e) => setReturnCost(Number(e.target.value) || 0)}
+                onBlur={async () => {
+                  await updateSettings({ 
+                    returnCost: Number(returnCost) || 0,
+                    returnCostMode: returnCostMode,
+                  });
+                  toast.success('تم حفظ تكلفة المرتجع لكل طلبية في قاعدة البيانات');
+                }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-bold"
                 placeholder="مثال: 400"
               />
@@ -1047,6 +1332,25 @@ export function SettingsConfig() {
             </div>
             <p className="text-[10px] text-gray-400 mt-1">تُطبق عند العمل بنظام الدفع لكل طلبية (الافتراضي 400 د.ج).</p>
           </div>
+        </div>
+
+        {/* زر حفظ فوري مخصص لإعدادات المرتجع */}
+        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+          <button
+            type="button"
+            onClick={async () => {
+              await updateSettings({
+                returnCostMode: returnCostMode,
+                returnMonthlySubscription: Number(returnMonthlySub) || 0,
+                returnCost: Number(returnCost) || 0,
+              });
+              toast.success('تم حفظ إعدادات ونظام حساب المرتجع في قاعدة البيانات بنجاح! 💾');
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>حفظ إعدادات المرتجع في قاعدة البيانات</span>
+          </button>
         </div>
       </div>
 

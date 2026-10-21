@@ -5,6 +5,7 @@ import { collection, onSnapshot, query, doc, setDoc, updateDoc } from 'firebase/
 import { useStore } from '../store';
 import { Order, AbandonedOrder, Campaign, CampaignRecord, CampaignField, SalesChannel, SystemSettings, Expense, AppUser } from '../types';
 import { DEFAULT_TAGS } from '../utils/tagUtils';
+import { DEFAULT_STATUS_COLORS } from '../utils/statusColorUtils';
 import { LogIn, UserX, ShieldAlert, LogOut, Loader2, AlertTriangle, X, ExternalLink } from 'lucide-react';
 import { firebaseConfig } from '../lib/firebaseConfig';
 
@@ -218,20 +219,52 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             const resolvedDelivery = Array.isArray(rawData.deliveryCompanies) && rawData.deliveryCompanies.length > 0
               ? rawData.deliveryCompanies
               : fallbackDelivery;
-            const hasTagsInDb = Array.isArray(rawData.tags) && rawData.tags.length > 0;
-            const resolvedTags = hasTagsInDb ? rawData.tags : DEFAULT_TAGS;
 
-            useStore.getState().setSettings({ 
+            // CRITICAL FIX: Only seed DEFAULT_TAGS if tags property is completely undefined in Firestore!
+            // If the user has saved tags (even custom or modified), preserve them permanently!
+            const hasTagsInDb = Array.isArray(rawData.tags);
+            const cachedSettings = useStore.getState().settings;
+            const resolvedTags = hasTagsInDb ? rawData.tags : (cachedSettings?.tags !== undefined ? cachedSettings.tags : DEFAULT_TAGS);
+
+            // CRITICAL FIX: Preserve returnCostMode and return subscription
+            const returnCostMode = rawData.returnCostMode || cachedSettings?.returnCostMode || 'per_order';
+            const returnMonthlySubscription = rawData.returnMonthlySubscription !== undefined 
+              ? rawData.returnMonthlySubscription 
+              : (cachedSettings?.returnMonthlySubscription || 0);
+            const returnCost = rawData.returnCost !== undefined 
+              ? rawData.returnCost 
+              : (cachedSettings?.returnCost ?? 400);
+
+            // CRITICAL FIX: Preserve statusColors and orderRowColorMode
+            const statusColors = rawData.statusColors || cachedSettings?.statusColors || DEFAULT_STATUS_COLORS;
+            const orderRowColorMode = rawData.orderRowColorMode || cachedSettings?.orderRowColorMode || 'auto';
+
+            const mergedSettings: SystemSettings = { 
               id: docSnap.id, 
               ...rawData, 
               deliveryCompanies: resolvedDelivery,
-              tags: resolvedTags
-            } as SystemSettings);
+              tags: resolvedTags,
+              returnCostMode,
+              returnMonthlySubscription,
+              returnCost,
+              statusColors,
+              orderRowColorMode,
+            };
 
-            // If tags were never seeded into Firestore doc, persist them now so they are permanently saved across all devices!
-            if (!hasTagsInDb) {
-              setDoc(doc(db, 'settings', 'general'), { tags: DEFAULT_TAGS }, { merge: true }).catch(err => {
-                console.warn("Could not seed default tags into Firestore:", err);
+            useStore.getState().setSettings(mergedSettings);
+
+            // Proactively ensure essential fields are permanently written in Firestore doc if missing
+            const missingInDb: Partial<SystemSettings> = {};
+            if (!hasTagsInDb) missingInDb.tags = resolvedTags;
+            if (rawData.returnCostMode === undefined) missingInDb.returnCostMode = returnCostMode;
+            if (rawData.returnMonthlySubscription === undefined) missingInDb.returnMonthlySubscription = returnMonthlySubscription;
+            if (rawData.returnCost === undefined) missingInDb.returnCost = returnCost;
+            if (!rawData.statusColors) missingInDb.statusColors = statusColors;
+            if (!rawData.orderRowColorMode) missingInDb.orderRowColorMode = orderRowColorMode;
+
+            if (Object.keys(missingInDb).length > 0) {
+              setDoc(doc(db, 'settings', 'general'), missingInDb, { merge: true }).catch(err => {
+                console.warn("Could not seed missing settings fields into Firestore:", err);
               });
             }
           } else {
@@ -243,6 +276,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               confirmers: [],
               inventoryManagementMode: 'local',
               tags: DEFAULT_TAGS,
+              statusColors: DEFAULT_STATUS_COLORS,
+              orderRowColorMode: 'auto',
+              returnCostMode: 'per_order',
+              returnMonthlySubscription: 0,
+              returnCost: 400,
             };
             useStore.getState().setSettings(defaultSettings);
             // Proactively create the document so the collection is created inside Firestore!

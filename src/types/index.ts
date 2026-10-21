@@ -253,6 +253,8 @@ export interface SystemSettings {
   smsTemplates?: Record<string, string>;
   smsAutoSendOnStatus?: string[];
   tags?: OrderTag[];
+  statusColors?: Record<string, string>;
+  orderRowColorMode?: 'auto' | 'status1' | 'status2';
   assignmentSettings?: AssignmentSettings;
 
   // Auto Backup & Design Settings

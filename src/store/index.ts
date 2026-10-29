@@ -856,18 +856,22 @@ export const useStore = create<AppState>()((set, get) => ({
         }
       }
 
-      // If product details were manually updated, invalidate raw items 
-      // so PickingList falls back to the manual edits
-      if (
-        ('productName' in updates && updates.productName !== existingOrder.productName) ||
-        ('variation' in updates && updates.variation !== existingOrder.variation) ||
-        ('sku' in updates && updates.sku !== existingOrder.sku)
-      ) {
-         updates.items = null;
-         (updates as any).line_items = null;
-         (updates as any).products = null;
-         (updates as any).cart = null;
-         (updates as any).orderedItems = null;
+      // If product details were manually updated without explicit items, invalidate raw items 
+      // so PickingList falls back to the manual edits.
+      // If updates.items is explicitly provided, preserve the new items!
+      const hasExplicitItems = 'items' in updates && updates.items !== undefined && updates.items !== null;
+      if (!hasExplicitItems) {
+        if (
+          ('productName' in updates && updates.productName !== existingOrder.productName) ||
+          ('variation' in updates && updates.variation !== existingOrder.variation) ||
+          ('sku' in updates && updates.sku !== existingOrder.sku)
+        ) {
+           updates.items = null;
+           (updates as any).line_items = null;
+           (updates as any).products = null;
+           (updates as any).cart = null;
+           (updates as any).orderedItems = null;
+        }
       }
     }
     

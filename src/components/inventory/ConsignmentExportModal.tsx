@@ -270,7 +270,16 @@ export function ConsignmentExportModal({
 
         // Check if multi-variation order breakdown exists
         if (ao.costInfo.breakdown && ao.costInfo.breakdown.length > 1) {
-          ao.costInfo.breakdown.forEach((item: any, itemIdx: number) => {
+          const prodNameClean = (selectedProduct?.name || '').toLowerCase().trim();
+          const relevantBreakdown = selectedProduct
+            ? ao.costInfo.breakdown.filter((item: any) => 
+                item.product?.id === selectedProduct.id || 
+                (item.productName && prodNameClean && item.productName.toLowerCase().includes(prodNameClean))
+              )
+            : ao.costInfo.breakdown;
+          const breakdownToUse = (relevantBreakdown && relevantBreakdown.length > 0) ? relevantBreakdown : ao.costInfo.breakdown;
+
+          breakdownToUse.forEach((item: any, itemIdx: number) => {
             const rowObj: Record<string, any> = {};
             const isFirstItem = itemIdx === 0;
 

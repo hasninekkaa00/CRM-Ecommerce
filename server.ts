@@ -852,6 +852,19 @@ async function startServer() {
       const rawPrice = order.totalCharge ?? order.totalPrice ?? order.price ?? 0;
       const cleanAmount = Number(String(rawPrice).replace(/[^0-9.]/g, '')) || 0;
 
+      // Extract & normalize parcel weight (الميزان الممرر لشركة الشحن)
+      // Algerian shipping companies expect weight in kg (e.g. 1, 1.5, 0.5)
+      // If raw weight > 50, it is likely entered in grams -> convert to kg. Default fallback is 1 kg.
+      const rawWeight = order.calculatedWeight ?? order.weight ?? order.poids ?? order.totalWeight;
+      let cleanWeight = 1;
+      if (rawWeight !== undefined && rawWeight !== null && rawWeight !== '') {
+        const numWeight = typeof rawWeight === 'number' ? rawWeight : parseFloat(String(rawWeight).replace(/,/g, '.').replace(/[^0-9.]/g, ''));
+        if (!isNaN(numWeight) && numWeight > 0) {
+          cleanWeight = numWeight > 50 ? Number((numWeight / 1000).toFixed(3)) : Number(numWeight.toFixed(3));
+        }
+      }
+      if (cleanWeight <= 0) cleanWeight = 1;
+
       const payload = {
         reference: String(order.id).substring(0, 15), 
         nom_client: cleanName,
@@ -865,8 +878,9 @@ async function startServer() {
         produit: cleanProduct,
         type: 1,
         stop_desk: isStopDesk ? 1 : 0,
-        weight: order.calculatedWeight ? Number(order.calculatedWeight) : 0,
-        poids: order.calculatedWeight ? Number(order.calculatedWeight) : 0
+        weight: cleanWeight,
+        poids: cleanWeight,
+        package_weight: cleanWeight
       };
 
       const sendOrder = async (pOverride: Partial<typeof payload> = {}) => {

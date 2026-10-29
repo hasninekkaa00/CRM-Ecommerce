@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { format, parseISO, isToday, startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { Search, Filter, Save, User, Clock, ArrowLeft, ArrowRight, Edit2, Check, X, Plus, Trash2, Archive, ArchiveRestore, AlertTriangle, ArrowUpDown, Package, Truck, CheckCircle, XCircle, AlignJustify, List, Link, EyeOff, Eye, RefreshCw, Bell, MessageSquare, Tag, ChevronDown, ChevronUp, Layers, Maximize2, Minimize2 } from 'lucide-react';
+import { Search, Filter, Save, User, Clock, ArrowLeft, ArrowRight, Edit2, Check, X, Plus, Trash2, Archive, ArchiveRestore, AlertTriangle, ArrowUpDown, Package, Truck, Scale, CheckCircle, XCircle, AlignJustify, List, Link, EyeOff, Eye, RefreshCw, Bell, MessageSquare, Tag, ChevronDown, ChevronUp, Layers, Maximize2, Minimize2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../common/TablePagination';
 import { safeParseDate, safeIsWithinInterval } from '../../utils/financeCalculations';
@@ -22,6 +22,7 @@ export const TAGS_OPTIONS = [
 
 import { AddOrderModal } from './AddOrderModal';
 import { ViewOrderModal } from './ViewOrderModal';
+import { EditOrderItemsModal } from './EditOrderItemsModal';
 import { ReplaceOrderModal } from './ReplaceOrderModal';
 import { PickingListModal } from './PickingListModal';
 import { QuickAddTagModal } from './QuickAddTagModal';
@@ -53,6 +54,7 @@ import { checkOrderDeletionIntegrity, IntegrityCheckResult } from '../../utils/d
 import { IntegrityProtectionModal } from '../common/IntegrityProtectionModal';
 import { resolveShippingDisplayNames, getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
 import { getOrderRowColorInfo } from '../../utils/statusColorUtils';
+import { calculateOrderShippingWeight, normalizeWeightToKg, formatWeightArabic } from '../../utils/weightUtils';
 
 const ALGERIA_WILAYAS = Object.entries(WILAYAS_MAP).map(([code, name]) => ({
   code,
@@ -440,13 +442,13 @@ export function OrdersList() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<any | null>(null);
+  const [editItemsModalOrder, setEditItemsModalOrder] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [currentTab, setCurrentTab] = useState<'active' | 'archived' | 'trash'>('active');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [showPickingList, setShowPickingList] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive' | 'restore' | 'trash' | 'restoreTrash' | 'directDelivery' | 'bulkDelete' | 'bulkShipping', id: string, name: string } | null>(null);
-  const [confirmShipping, setConfirmShipping] = useState<{ order: any, integration: any } | null>(null);
   const [manualTrackingModal, setManualTrackingModal] = useState<{ order: any } | null>(null);
   const [manualTrackingId, setManualTrackingId] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -632,8 +634,7 @@ export function OrdersList() {
     }
   };
 
-  const handlePushToShipping = async (order: any, integration: any) => {
-    setConfirmShipping(null);
+  const handlePushToShipping = async (order: any, integration: any, customWeight?: number) => {
     setShippingLoading(order.id);
     
     let nextOrderId = null;
@@ -664,63 +665,15 @@ export function OrdersList() {
                };
            });
        }
-
-       // Calculate Total Weight
-       let totalWeight = 0;
-       const getProductWeight = (sku: string, pName: string, vName: string) => {
-           let prod = null;
-           if (sku) {
-               const currentSkus = String(sku).split(',').map((s: string) => s.trim().toLowerCase());
-               prod = inventoryProducts.find((p: any) => 
-                   (p.sku && currentSkus.includes(p.sku.toLowerCase().trim())) ||
-                   (p.variations && p.variations.some((v:any) => v.sku && currentSkus.includes(v.sku.toLowerCase().trim())))
-               );
-               if (prod && prod.variations) {
-                   const matchedVar = prod.variations.find((v:any) => v.sku && currentSkus.includes(v.sku.toLowerCase().trim()));
-                   if (matchedVar && typeof matchedVar.weight !== 'undefined' && matchedVar.weight !== null) {
-                       return Number(matchedVar.weight);
-                   }
-               }
-           }
-           if (!prod && pName) {
-               const oName = String(pName).trim().toLowerCase();
-               prod = inventoryProducts.find((p: any) => {
-                   const ppName = (p.name || '').trim().toLowerCase();
-                   return ppName === oName || oName.includes(ppName) || ppName.includes(oName);
-               });
-           }
-           if (prod) {
-               if (vName && prod.variations) {
-                   const oVName = String(vName).trim().toLowerCase();
-                   const matchedVar = prod.variations.find((v:any) => {
-                       const vvName = String(v.name || v.attributes?.map((a:any)=>a.option).join(' ') || '').trim().toLowerCase();
-                       return vvName === oVName || oVName.includes(vvName);
-                   });
-                   if (matchedVar && typeof matchedVar.weight !== 'undefined' && matchedVar.weight !== null) {
-                       return Number(matchedVar.weight);
-                   }
-               }
-               if (typeof prod.weight !== 'undefined' && prod.weight !== null) {
-                   return Number(prod.weight);
-               }
-           }
-           return 0;
-       };
-
-       if (order.items && Array.isArray(order.items) && order.items.length > 0) {
-           order.items.forEach((it: any) => {
-               const qty = Number(it.quantity ?? it.qnts ?? 1) || 1;
-               const w = getProductWeight(it.sku, it.name || it.productName, it.variation);
-               totalWeight += w * qty;
-           });
-       } else {
-           const qty = Number(order.qnts ?? 1) || 1;
-           const w = getProductWeight(order.sku, order.productName, order.variation);
-           totalWeight += w * qty;
-       }
-       
-       shippingOrder.calculatedWeight = totalWeight;
     }
+
+    // Resolve & normalize parcel weight (الميزان) to kg
+    const resolvedWeight = (customWeight !== undefined && Number(customWeight) > 0)
+      ? normalizeWeightToKg(customWeight)
+      : calculateOrderShippingWeight(order, inventoryProducts, settings?.defaultShippingWeight || 1);
+
+    shippingOrder.calculatedWeight = resolvedWeight;
+    shippingOrder.weight = resolvedWeight;
     if (focusModeOrderId === order.id) {
        const currentIndex = filteredOrders.findIndex(o => o.id === order.id);
        if (currentIndex > -1 && currentIndex < filteredOrders.length - 1) {
@@ -779,7 +732,9 @@ export function OrdersList() {
       const updates: any = {
         shippingTrackingId: assignedTracking,
         deliveryCompany: integration?.name || order.deliveryCompany || 'شركة الشحن',
-        status2: 'تم الشحن'
+        status2: 'تم الشحن',
+        weight: resolvedWeight,
+        calculatedWeight: resolvedWeight
       };
 
       if (calculatedShippingFee && calculatedShippingFee > 0 && order.shippingFeeMode !== 'manual') {
@@ -789,7 +744,7 @@ export function OrdersList() {
 
       await updateOrder(order.id, updates);
       playActionSound('success');
-      toast.success(`تم تمرير الطلبية للشحن بنجاح! رقم التتبع: ${assignedTracking} | سعر الشحن: ${calculatedShippingFee || updates.realDeliveryPrice || 'افتراضي'} د.ج`);
+      toast.success(`تم تمرير الطلبية للشحن بنجاح! رقم التتبع: ${assignedTracking} | الميزان: ${formatWeightArabic(resolvedWeight)} | سعر الشحن: ${calculatedShippingFee || updates.realDeliveryPrice || 'افتراضي'} د.ج`);
       if (nextOrderId) {
          setFocusModeOrderId(nextOrderId);
       }
@@ -2422,6 +2377,15 @@ export function OrdersList() {
                     <td className="p-2 border-r border-gray-100 font-semibold text-gray-900" style={{ width: colWidths.productName, minWidth: colWidths.productName, maxWidth: colWidths.productName }}>
                       {isEditing && editDraft ? (
                         <div className="flex flex-col gap-1 w-full">
+                           <button
+                             type="button"
+                             onClick={() => setEditItemsModalOrder(editDraft)}
+                             className="w-full flex items-center justify-center gap-1.5 px-2 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded text-[11px] font-black shadow-xs transition-colors"
+                             title="إدارة وتعديل وإضافة منتجات متعددة للطلبية وحساب أسعارها والكريدي والوزن تلقائياً"
+                           >
+                             <Layers className="w-3.5 h-3.5 shrink-0" />
+                             <span>تعديل وإضافة منتجات {editDraft.items && editDraft.items.length > 1 ? `(${editDraft.items.length})` : '(+)'}</span>
+                           </button>
                            <select
                               className="w-full border border-gray-300 rounded px-1.5 py-1 text-[11px] font-bold focus:outline-none focus:border-blue-500 bg-white"
                               value={editDraft.sku ? JSON.stringify({ sku: editDraft.sku, name: editDraft.productName, variation: editDraft.variation || '' }) : ''}
@@ -2515,6 +2479,20 @@ export function OrdersList() {
                                    </div>
                                    {synced.variation && <span className={`text-[10px] ${synced.isSynced ? "text-indigo-500" : "text-gray-400"} font-normal truncate`} title={synced.variation}>({synced.variation})</span>}
                                    {order.sku && <span className="text-[9px] font-mono font-bold text-gray-400 mt-0.5 block truncate" title={order.sku}>SKU: {order.sku}</span>}
+                                   {order.items && Array.isArray(order.items) && order.items.length > 1 && (
+                                     <button
+                                       type="button"
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         setEditItemsModalOrder(order);
+                                       }}
+                                       className="inline-flex items-center gap-1 w-max mt-0.5 px-1.5 py-0.5 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 text-indigo-700 border border-indigo-200 rounded text-[9px] font-black shadow-xs transition-colors cursor-pointer"
+                                       title="انقر لتعديل تفاصيل وإضافة منتجات للطلبية"
+                                     >
+                                       <Layers className="w-2.5 h-2.5 text-indigo-600" />
+                                       <span>{order.items.length} منتجات</span>
+                                     </button>
+                                   )}
                                 </div>
                              );
                           })()}
@@ -2775,7 +2753,7 @@ export function OrdersList() {
                                           toast.error(status.message || "المكتب غير متوفر", { duration: 6000, style: { minWidth: '350px' } });
                                           return;
                                         }
-                                        setConfirmShipping({ order, integration: activeIntegration }); 
+                                        handlePushToShipping(order, activeIntegration); 
                                       }}
                                       disabled={shippingLoading === order.id}
                                       className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-[10px] font-bold py-1 px-1 rounded flex items-center justify-center gap-1 transition-all shadow-sm"
@@ -3209,46 +3187,6 @@ export function OrdersList() {
         </div>
       )}
 
-      {/* Shipping Confirmation Modal */}
-      {confirmShipping && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden" dir="rtl">
-            <div className={`p-4 flex items-start gap-3 border-b border-indigo-100 bg-indigo-50/50`}>
-              <div className={`p-2 rounded-full bg-indigo-100 text-indigo-600`}>
-                <Truck className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900 mt-1">
-                  تأكيد إرسال الطلبية
-                </h3>
-                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                  هل أنت متأكد من إرسال الطلبية لزبون {confirmShipping.order.fullName} إلى شركة الشحن {confirmShipping.integration.name}؟ لن تتمكن من التعديل عليها هنا حتى يتم استرجاعها.
-                </p>
-              </div>
-            </div>
-            <div className="bg-gray-50 px-4 py-3 flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmShipping(null)}
-                className="px-4 py-1.5 rounded text-sm font-bold text-gray-600 hover:bg-gray-200 transition-colors"
-                disabled={shippingLoading === confirmShipping.order.id}
-              >
-                إلغاء
-              </button>
-              <button
-                onClick={() => handlePushToShipping(confirmShipping.order, confirmShipping.integration)}
-                className={`px-4 py-1.5 rounded text-sm font-bold text-white transition-colors bg-indigo-600 hover:bg-indigo-700 flex items-center gap-2`}
-                disabled={shippingLoading === confirmShipping.order.id}
-              >
-                {shippingLoading === confirmShipping.order.id ? (
-                    <div className="w-3 h-3 border-2 border-white rounded-full border-t-transparent animate-spin"></div>
-                ) : null}
-                تأكيد الإرسال
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Manual Tracking Modal */}
       {manualTrackingModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -3567,7 +3505,18 @@ export function OrdersList() {
                             {/* Product details */}
                             <div className="lg:col-span-3 border-t pt-3 mt-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <div>
-                                <label className="block text-[10px] text-slate-400 mb-1">المنتج (من المخزن)</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-[10px] text-slate-400">المنتج (من المخزن)</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditItemsModalOrder(focusEditDraft || focusedOrder)}
+                                    className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                                    title="تعديل وإضافة منتجات متعددة للطلبية"
+                                  >
+                                    <Layers className="w-3 h-3 text-indigo-600" />
+                                    <span>منتجات متعددة {focusEditDraft?.items && focusEditDraft.items.length > 1 ? `(${focusEditDraft.items.length})` : '(+)'}</span>
+                                  </button>
+                                </div>
                                 <select
                                   value={focusEditDraft?.sku ? JSON.stringify({ sku: focusEditDraft.sku, name: focusEditDraft.productName, variation: focusEditDraft.variation || '' }) : ''}
                                   onChange={(e) => {
@@ -3958,6 +3907,25 @@ export function OrdersList() {
       {/* View Order Modal */}
       {viewOrderModal && (
         <ViewOrderModal order={viewOrderModal} onClose={() => setViewOrderModal(null)} />
+      )}
+      {/* Edit Order Items Modal (Multi-product support) */}
+      {editItemsModalOrder && (
+        <EditOrderItemsModal
+          isOpen={!!editItemsModalOrder}
+          order={editItemsModalOrder}
+          onClose={() => setEditItemsModalOrder(null)}
+          onSaved={(updated) => {
+            if (editingId === updated.id) {
+              setEditDraft((prev: any) => prev ? ({ ...prev, ...updated }) : updated);
+            }
+            if (focusModeOrderId === updated.id) {
+              setFocusEditDraft((prev: any) => prev ? ({ ...prev, ...updated }) : updated);
+            }
+            if (viewOrderModal && viewOrderModal.id === updated.id) {
+              setViewOrderModal((prev: any) => prev ? ({ ...prev, ...updated }) : updated);
+            }
+          }}
+        />
       )}
       <ReplaceOrderModal originalOrder={replaceOrderModal} isOpen={!!replaceOrderModal} onClose={() => setReplaceOrderModal(null)} />
 

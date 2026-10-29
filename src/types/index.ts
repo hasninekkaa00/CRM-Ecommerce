@@ -67,6 +67,8 @@ export interface Order {
   confirmerInvoiceId?: string;
   confirmerCommissionAmount?: number;
   confirmedAt?: string;
+  weight?: number;
+  calculatedWeight?: number;
 }
 
 export interface OrderTagEntry {
@@ -238,6 +240,7 @@ export interface SystemSettings {
   inventoryManagementMode?: 'sync' | 'local';
 
   shippingIntegrations?: ShippingIntegration[];
+  defaultShippingWeight?: number;
   
   themePalette?: string;
   customThemePalettes?: CustomThemePalette[];

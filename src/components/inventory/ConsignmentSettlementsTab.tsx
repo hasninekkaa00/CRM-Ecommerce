@@ -288,7 +288,13 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
            const tracking = ao.order.shippingTrackingId || ao.order.trackingNumber || orderNum;
 
            if (ao.costInfo.breakdown && ao.costInfo.breakdown.length > 1) {
-             return ao.costInfo.breakdown.map((item, itemIdx) => ({
+             const prodNameClean = (selectedProduct.name || '').toLowerCase().trim();
+             const relevantItems = ao.costInfo.breakdown.filter((item: any) => 
+               item.product?.id === selectedProductId || 
+               (item.productName && prodNameClean && item.productName.toLowerCase().includes(prodNameClean))
+             );
+             const itemsToUse = relevantItems.length > 0 ? relevantItems : ao.costInfo.breakdown;
+             return itemsToUse.map((item, itemIdx) => ({
                 id: `ITEM-${Date.now()}-${index}-${itemIdx}`,
                 sku: item.sku || tracking,
                 productName: `${item.productName || selectedProduct.name} - ${item.variationName || `نوع ${itemIdx + 1}`} (طلبية #${orderNum}) | تاريخ: ${dateStr}`.trim(),
@@ -752,7 +758,7 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
                                 )}
                               </td>
                               <td className="py-2.5 px-4">
-                                <span className="bg-slate-100 px-2 py-0.5 rounded-lg text-slate-700 font-bold text-xs">{ao.costInfo.calculatedQuantity}</span>
+                                <span className="bg-slate-100 px-2 py-0.5 rounded-lg text-slate-700 font-bold text-xs">{getOrderRelevantQty(ao)}</span>
                               </td>
                               <td className="py-2.5 px-4 text-rose-600">
                                 {hasMultiVariants ? (
@@ -777,7 +783,7 @@ export function ConsignmentSettlementsTab({ suppliers, orders, createConsignment
                                   <span>{ao.costInfo.unitCost.toLocaleString()} د.ج</span>
                                 )}
                               </td>
-                              <td className="py-2.5 px-4 font-black text-rose-700">{ao.costInfo.totalCogs.toLocaleString()} د.ج</td>
+                              <td className="py-2.5 px-4 font-black text-rose-700">{getOrderRelevantCost(ao).toLocaleString()} د.ج</td>
                               <td className="py-2.5 px-4 text-center">
                                 <button 
                                   onClick={() => setViewOrder(ao.order)}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Megaphone, MegaphoneOff, Check, CheckCircle, MapPin, Package, Phone, Truck, User, Hash, Edit3, X, FileText, CornerDownLeft, ArrowRight, Save, RefreshCw, AlertCircle, Map, Tag, Plus, AlignLeft, Clock, StickyNote } from "lucide-react";
+import { Calendar, Megaphone, MegaphoneOff, Check, CheckCircle, MapPin, Package, Phone, Truck, Scale, User, Hash, Edit3, X, FileText, CornerDownLeft, ArrowRight, Save, RefreshCw, AlertCircle, Map, Tag, Plus, AlignLeft, Clock, StickyNote } from "lucide-react";
 import { SearchableSelect } from "../common/SearchableSelect";
 import toast from 'react-hot-toast';
 import { useStore } from '../../store';
@@ -7,6 +7,7 @@ import { SourceChannelBadge } from '../../utils/channelUtils';
 import { isNoteFromToday, detectNoteTarget } from '../../utils/noteUtils';
 import { getOrderTagsHistory, formatTagTimestamp, addTagToOrder, removeTagFromOrder } from '../../utils/tagUtils';
 import { QuickAddTagModal } from './QuickAddTagModal';
+import { EditOrderItemsModal } from './EditOrderItemsModal';
 
 interface ViewOrderModalProps {
   order: any;
@@ -45,6 +46,7 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
   const [isQuickTagOpen, setIsQuickTagOpen] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [newNoteInput, setNewNoteInput] = useState('');
+  const [isEditItemsOpen, setIsEditItemsOpen] = useState(false);
 
   if (!order) return null;
 
@@ -333,6 +335,32 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
                            className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                         />
                      </div>
+
+                     {/* Parcel Weight (الميزان) */}
+                     <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                           <Scale className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                           <span className="text-[10px] font-bold text-slate-600 whitespace-nowrap">وزن الطرد (الميزان لشركة الشحن):</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                           <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              defaultValue={currentOrder.calculatedWeight ?? currentOrder.weight ?? 1}
+                              onBlur={(e) => {
+                                 const val = parseFloat(e.target.value);
+                                 if (!isNaN(val) && val > 0 && val !== (currentOrder.calculatedWeight ?? currentOrder.weight)) {
+                                    const norm = val > 50 ? Number((val / 1000).toFixed(3)) : Number(val.toFixed(3));
+                                    handleUpdateField('calculatedWeight', norm, 'تم تحديث وزن الطرد');
+                                    updateOrder(currentOrder.id, { weight: norm, calculatedWeight: norm });
+                                 }
+                              }}
+                              className="w-20 text-xs font-mono font-black text-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                           />
+                           <span className="text-[10px] font-bold text-slate-500">كغ</span>
+                        </div>
+                     </div>
                   </div>
                </div>
             </div>
@@ -389,40 +417,103 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
                 
                 {/* Product Info */}
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> المنتج وتفاصيله</h3>
+                   <div className="flex items-center justify-between pb-1 border-b border-slate-100 flex-wrap gap-2">
+                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5" /> 
+                        المنتج وتفاصيله {currentOrder.items && currentOrder.items.length > 1 ? `(${currentOrder.items.length} منتجات)` : ''}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditItemsOpen(true)}
+                        className="text-[11px] font-black text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>تعديل وإضافة منتجات للطلبية</span>
+                      </button>
+                   </div>
+                   
                    <div className="space-y-2 flex-col flex">
-                      <div className="flex flex-col">
-                         <span className="text-[10px] text-slate-400 font-bold">المنتج</span>
-                         <span className="text-sm font-bold text-slate-800">{currentOrder.productName}</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100 mt-2">
-                         <div className="flex flex-col">
-                            <span className="text-[10px] text-slate-400 font-bold">النوع (Variation)</span>
-                            <span className="text-xs font-bold text-indigo-600">{currentOrder.variation || '-'}</span>
-                         </div>
-                         <div className="flex flex-col items-center">
-                            <span className="text-[10px] text-slate-400 font-bold">الكمية</span>
-                            <span className="text-sm font-black text-slate-800 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-200">{currentOrder.qnts || 1}</span>
-                         </div>
-                      </div>
-                      {currentOrder.sku && (
-                        <div className="flex flex-col mt-2">
-                           <span className="text-[10px] text-slate-400 font-bold">رمز المنتج (SKU)</span>
-                           <span className="text-xs font-mono font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded w-fit border border-slate-200">{currentOrder.sku}</span>
-                        </div>
-                      )}
-                      {currentOrder.items && currentOrder.items.length > 0 && (
-                          <div className="mt-3">
-                              <span className="text-[10px] text-slate-400 font-bold mb-1 block">المنتجات المرتبطة (العرض):</span>
-                              <div className="bg-orange-50 border border-orange-100 rounded-lg p-2 flex flex-col gap-1.5">
-                                  {currentOrder.items.map((it:any, idx:number) => (
-                                      <div key={idx} className="flex justify-between items-center text-[11px] font-bold">
-                                          <span className="text-orange-900">{it.name} {it.variation ? `- ${it.variation}` : ''}</span>
-                                          <span className="bg-orange-200 text-orange-900 px-1.5 py-0.5 rounded">x{it.quantity}</span>
+                      {currentOrder.items && currentOrder.items.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="space-y-2">
+                            {currentOrder.items.map((it: any, idx: number) => {
+                              const itName = it.productName || it.name || 'منتج';
+                              const itVar = it.variation || it.variationName || '';
+                              const itQty = Number(it.quantity ?? it.qnts ?? 1) || 1;
+                              const itPrice = it.price !== undefined ? Number(it.price) : undefined;
+                              return (
+                                <div key={it.id || idx} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="w-5 h-5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-black text-slate-800 truncate">{itName}</p>
+                                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 font-bold flex-wrap">
+                                        {itVar && <span className="text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-slate-200">{itVar}</span>}
+                                        {it.sku && <span className="font-mono text-slate-600">SKU: {it.sku}</span>}
                                       </div>
-                                  ))}
-                              </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="bg-white text-slate-800 px-2 py-0.5 rounded-md border border-slate-200 text-xs font-black">
+                                      × {itQty}
+                                    </span>
+                                    {itPrice !== undefined && itPrice > 0 && (
+                                      <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                                        {(itPrice * itQty).toLocaleString()} د.ج
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
+                          
+                          <div className="flex items-center justify-between p-2 bg-indigo-50/50 rounded-xl border border-indigo-100 text-xs font-bold text-slate-600">
+                            <span>إجمالي القطع: <strong className="text-indigo-900 font-black">{currentOrder.qnts || currentOrder.items.reduce((s: number, i: any) => s + (Number(i.quantity ?? i.qnts ?? 1) || 1), 0)} قطعة</strong></span>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditItemsOpen(true)}
+                              className="text-indigo-600 hover:text-indigo-800 text-[11px] font-black underline cursor-pointer"
+                            >
+                              + إضافة منتج إضافي
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-col">
+                             <span className="text-[10px] text-slate-400 font-bold">المنتج</span>
+                             <span className="text-sm font-bold text-slate-800">{currentOrder.productName}</span>
+                          </div>
+                          <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl border border-slate-100 mt-2">
+                             <div className="flex flex-col">
+                                <span className="text-[10px] text-slate-400 font-bold">النوع (Variation)</span>
+                                <span className="text-xs font-bold text-indigo-600">{currentOrder.variation || '-'}</span>
+                             </div>
+                             <div className="flex flex-col items-center">
+                                <span className="text-[10px] text-slate-400 font-bold">الكمية</span>
+                                <span className="text-sm font-black text-slate-800 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-200">{currentOrder.qnts || 1}</span>
+                             </div>
+                          </div>
+                          {currentOrder.sku && (
+                            <div className="flex flex-col mt-2">
+                               <span className="text-[10px] text-slate-400 font-bold">رمز المنتج (SKU)</span>
+                               <span className="text-xs font-mono font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded w-fit border border-slate-200">{currentOrder.sku}</span>
+                            </div>
+                          )}
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setIsEditItemsOpen(true)}
+                              className="text-xs font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>تحويل إلى طلبية متعددة المنتجات / إضافة منتج آخر</span>
+                            </button>
+                          </div>
+                        </>
                       )}
                    </div>
                 </div>
@@ -786,6 +877,11 @@ export function ViewOrderModal({ order, onClose }: ViewOrderModalProps) {
         isOpen={isQuickTagOpen}
         targetOrder={currentOrder}
         onClose={() => setIsQuickTagOpen(false)}
+      />
+      <EditOrderItemsModal
+        isOpen={isEditItemsOpen}
+        onClose={() => setIsEditItemsOpen(false)}
+        order={currentOrder}
       />
     </div>
   );

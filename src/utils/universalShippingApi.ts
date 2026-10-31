@@ -288,19 +288,35 @@ export function buildEcoTrackPayload(order: any) {
 
   let cleanProduct = "";
   if (order.items && Array.isArray(order.items) && order.items.length > 0) {
-    cleanProduct = order.items.map((it: any) => {
-      const pName = String(it.name || it.productName || '').trim();
-      const vName = String(it.variation || it.variationName || '').trim();
-      const qty = Number(it.quantity || it.qnts || 1);
-      
+    // If order has single item, ensure root order.productName and order.qnts take precedence
+    if (order.items.length === 1) {
+      const it = order.items[0];
+      const pName = String(order.productName || it.name || it.productName || '').trim();
+      const vName = String(order.variation !== undefined && order.variation !== '' ? order.variation : (it.variation || it.variationName || '')).trim();
+      const qty = Number(order.qnts ?? order.quantity ?? it.quantity ?? it.qnts ?? 1) || 1;
+
       let itemTitle = pName;
       if (vName && !pName.toLowerCase().includes(vName.toLowerCase())) {
         itemTitle = pName ? `${pName} (${vName})` : vName;
       } else if (!pName && vName) {
         itemTitle = vName;
       }
-      return qty > 1 ? `${itemTitle} × ${qty}` : itemTitle;
-    }).filter(Boolean).join(' + ');
+      cleanProduct = qty > 1 ? `${itemTitle} × ${qty}` : itemTitle;
+    } else {
+      cleanProduct = order.items.map((it: any) => {
+        const pName = String(it.name || it.productName || '').trim();
+        const vName = String(it.variation || it.variationName || '').trim();
+        const qty = Number(it.quantity || it.qnts || 1);
+        
+        let itemTitle = pName;
+        if (vName && !pName.toLowerCase().includes(vName.toLowerCase())) {
+          itemTitle = pName ? `${pName} (${vName})` : vName;
+        } else if (!pName && vName) {
+          itemTitle = vName;
+        }
+        return qty > 1 ? `${itemTitle} × ${qty}` : itemTitle;
+      }).filter(Boolean).join(' + ');
+    }
   }
 
   if (!cleanProduct) {
@@ -314,6 +330,10 @@ export function buildEcoTrackPayload(order: any) {
       }
     } else {
       cleanProduct = pName || vName;
+    }
+    const mainQty = Number(order.qnts ?? order.quantity ?? 1) || 1;
+    if (mainQty > 1 && cleanProduct) {
+      cleanProduct = `${cleanProduct} × ${mainQty}`;
     }
   }
 
@@ -334,13 +354,12 @@ export function buildEcoTrackPayload(order: any) {
   // If raw weight > 50, it is likely entered in grams -> convert to kg. Default fallback is 1 kg.
   const rawWeight = order.calculatedWeight ?? order.weight ?? order.poids ?? order.totalWeight;
   let cleanWeight = 1;
-  if (rawWeight !== undefined && rawWeight !== null && rawWeight !== '') {
+  if (rawWeight !== undefined && rawWeight !== null && String(rawWeight).trim() !== '') {
     const numWeight = typeof rawWeight === 'number' ? rawWeight : parseFloat(String(rawWeight).replace(/,/g, '.').replace(/[^0-9.]/g, ''));
-    if (!isNaN(numWeight) && numWeight > 0) {
+    if (!isNaN(numWeight) && numWeight >= 0) {
       cleanWeight = numWeight > 50 ? Number((numWeight / 1000).toFixed(3)) : Number(numWeight.toFixed(3));
     }
   }
-  if (cleanWeight <= 0) cleanWeight = 1;
 
   return {
     reference: String(order.id).substring(0, 15),

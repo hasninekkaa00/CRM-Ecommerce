@@ -231,8 +231,12 @@ export function EditOrderItemsModal({ isOpen, onClose, order, onSaved }: EditOrd
         settings?.defaultShippingWeight || 1
       );
 
-      const updates: Partial<Order> = {
+      const updates: any = {
         items: cleanItems,
+        line_items: cleanItems,
+        products: cleanItems,
+        cart: cleanItems,
+        orderedItems: cleanItems,
         productName: combinedProductName,
         variation: combinedVariation,
         sku: combinedSku,
@@ -356,7 +360,7 @@ export function EditOrderItemsModal({ isOpen, onClose, order, onSaved }: EditOrd
                                   const varPrice = v.price || p.price || p.regular_price || 0;
                                   const varCost = getProductCostValue(v) || pCost || 0;
                                   const vSku = v.sku || (p.sku ? `${p.sku}-${vIdx + 1}` : '');
-                                  const vWeight = v.weight || p.weight || 0;
+                                  const vWeight = v.weight !== undefined && v.weight !== null && String(v.weight).trim() !== '' ? v.weight : (p.weight ?? 0);
                                   const val = JSON.stringify({
                                     sku: vSku,
                                     name: p.name,
@@ -375,13 +379,14 @@ export function EditOrderItemsModal({ isOpen, onClose, order, onSaved }: EditOrd
                             );
                           } else {
                             const basePrice = p.price || p.regular_price || 0;
+                            const pWeight = p.weight !== undefined && p.weight !== null && String(p.weight).trim() !== '' ? p.weight : 0;
                             const val = JSON.stringify({
                               sku: p.sku || '',
                               name: p.name,
                               variation: '',
                               price: basePrice,
                               cost: pCost || 0,
-                              weight: p.weight || 0
+                              weight: pWeight
                             });
                             return (
                               <option key={p.id} value={val}>

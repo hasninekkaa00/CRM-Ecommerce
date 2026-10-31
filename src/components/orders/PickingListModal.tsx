@@ -160,6 +160,38 @@ function parseOrderItems(order: any, inventoryProducts: any[] = []): Array<{ pro
   }
 
   if (Array.isArray(rawItems) && rawItems.length > 0) {
+    // If order was converted to a single product or has 1 item, ensure updated root values take precedence
+    if (rawItems.length === 1) {
+      const item = rawItems[0];
+      const itName = String(order.productName || item.name || item.product_name || item.productName || item.title || 'منتج غير محدد').trim();
+      const itVar = order.variation !== undefined && String(order.variation).trim() !== ''
+        ? String(order.variation).trim()
+        : (item.variation || item.variation_name || item.variationName || '');
+      const itSku = String(order.sku || item.sku || item.variation_sku || item.product_sku || '').trim();
+      const itQty = getSafeQty(order.qnts ?? order.quantity ?? item.quantity ?? item.qnts ?? 1);
+
+      results.push({
+        productName: itName,
+        variation: cleanVariationName(String(itVar), itName),
+        sku: itSku,
+        quantity: itQty
+      });
+      return results;
+    }
+
+    // If order has multiple raw items, but order.productName is a single product that does not contain '+'
+    // and doesn't match the multi-items, the order was updated to a single product:
+    const mainProdName = String(order.productName || '').trim();
+    if (mainProdName && !mainProdName.includes('+') && !rawItems.some(it => (it.name || it.productName) === mainProdName)) {
+      results.push({
+        productName: mainProdName,
+        variation: cleanVariationName(String(order.variation || ''), mainProdName),
+        sku: String(order.sku || '').trim(),
+        quantity: getSafeQty(order.qnts ?? order.quantity ?? 1)
+      });
+      return results;
+    }
+
     rawItems.forEach((item: any) => {
       const itName = item.name || item.product_name || item.productName || item.title || order.productName || 'منتج غير محدد';
       
@@ -181,15 +213,7 @@ function parseOrderItems(order: any, inventoryProducts: any[] = []): Array<{ pro
         }
       }
 
-      if (!itVar && rawItems.length === 1 && order.variation) {
-        itVar = order.variation;
-      }
-
       let itSku = item.sku || item.variation_sku || item.product_sku || '';
-      if (!itSku && rawItems.length === 1 && order.sku) {
-        itSku = order.sku;
-      }
-
       const itQty = getSafeQty(item.quantity ?? item.qnts ?? item.qty ?? 1);
 
       // Check if itVar contains multiple split variations with explicit + (e.g. "2 x أحمر + 1 x أزرق")
@@ -571,11 +595,16 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       if (cleanSku) {
         const cSku = compactSku(cleanSku);
         for (const p of (inventoryProducts || [])) {
+          const pNorm = normalizeText(p.name);
+          const isNameCompatible = !normPName || normPName === 'منتج غير محدد' || pNorm === normPName || pNorm.includes(normPName) || normPName.includes(pNorm);
+
           // Check parent SKU
           const pSku = (p.sku || '').trim().toLowerCase();
           if (pSku && (pSku === normSku || compactSku(pSku) === cSku)) {
-            matchedParent = p;
-            break; // Found parent
+            if (isNameCompatible) {
+              matchedParent = p;
+              break; // Found parent
+            }
           }
           // Check variations SKU
           if (Array.isArray(p.variations)) {
@@ -584,9 +613,11 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
               return vSku && (vSku === normSku || compactSku(vSku) === cSku);
             });
             if (foundVar) {
-              matchedParent = p;
-              matchedVariation = foundVar;
-              break;
+              if (isNameCompatible) {
+                matchedParent = p;
+                matchedVariation = foundVar;
+                break;
+              }
             }
           }
         }

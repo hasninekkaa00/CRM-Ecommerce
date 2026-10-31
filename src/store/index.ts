@@ -24,6 +24,7 @@ import { triggerStatusNotification } from '../utils/notifications';
 import { recordDeletedItem, removeDeletedRecord, getDeletedHistory } from '../utils/undoManager';
 import { showUndoToast } from '../utils/undoToast';
 import { universalSyncWooCommerce } from '../utils/universalWooCommerceApi';
+import { syncOrderItems } from '../utils/orderSyncUtils';
 
 let cachedFeesData: any = null;
 let lastFeesFetchTime = 0;
@@ -856,21 +857,26 @@ export const useStore = create<AppState>()((set, get) => ({
         }
       }
 
-      // If product details were manually updated without explicit items, invalidate raw items 
-      // so PickingList falls back to the manual edits.
-      // If updates.items is explicitly provided, preserve the new items!
+      // If product details or quantity were updated, strictly synchronize items array
+      // so shipping dispatch, picking list, and reports stay 100% in sync with the new product and quantity!
+      const hasProductOrQtyUpdate =
+        ('productName' in updates && updates.productName !== existingOrder.productName) ||
+        ('variation' in updates && updates.variation !== existingOrder.variation) ||
+        ('sku' in updates && updates.sku !== existingOrder.sku) ||
+        ('qnts' in updates && updates.qnts !== existingOrder.qnts);
+
       const hasExplicitItems = 'items' in updates && updates.items !== undefined && updates.items !== null;
-      if (!hasExplicitItems) {
-        if (
-          ('productName' in updates && updates.productName !== existingOrder.productName) ||
-          ('variation' in updates && updates.variation !== existingOrder.variation) ||
-          ('sku' in updates && updates.sku !== existingOrder.sku)
-        ) {
-           updates.items = null;
-           (updates as any).line_items = null;
-           (updates as any).products = null;
-           (updates as any).cart = null;
-           (updates as any).orderedItems = null;
+      if (hasProductOrQtyUpdate && !hasExplicitItems) {
+        const mergedForSync = { ...existingOrder, ...updates };
+        const synced = syncOrderItems(mergedForSync, get().inventoryProducts);
+        updates.items = synced.items;
+        (updates as any).line_items = synced.line_items;
+        (updates as any).products = synced.products;
+        (updates as any).cart = synced.cart;
+        (updates as any).orderedItems = synced.orderedItems;
+        if (updates.weight === undefined && updates.calculatedWeight === undefined) {
+          updates.weight = synced.weight;
+          updates.calculatedWeight = synced.calculatedWeight;
         }
       }
     }

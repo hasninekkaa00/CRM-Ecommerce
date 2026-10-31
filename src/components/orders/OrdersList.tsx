@@ -55,6 +55,7 @@ import { IntegrityProtectionModal } from '../common/IntegrityProtectionModal';
 import { resolveShippingDisplayNames, getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
 import { getOrderRowColorInfo } from '../../utils/statusColorUtils';
 import { calculateOrderShippingWeight, normalizeWeightToKg, formatWeightArabic } from '../../utils/weightUtils';
+import { syncOrderItems, prepareOrderForShipping } from '../../utils/orderSyncUtils';
 
 const ALGERIA_WILAYAS = Object.entries(WILAYAS_MAP).map(([code, name]) => ({
   code,
@@ -639,41 +640,9 @@ export function OrdersList() {
     
     let nextOrderId = null;
     
-    // Resolve product for Shipping Alias according to user's 3-tier hierarchy:
-    // 1. Variation alias if written ("الاسم المستعار المدون")
-    // 2. Or general product alias + variation if variation alias is empty ("الاسم العام مع زيادة النوع")
-    // 3. Or original product name + variation if both empty ("إذا تركت فارغة يتم أخذ الاسم الأصلي")
-    let shippingOrder = { ...order };
-    if (typeof inventoryProducts !== 'undefined' && inventoryProducts) {
-       const resolved = resolveShippingDisplayNames(order, inventoryProducts);
-       shippingOrder.productName = resolved.productName;
-       shippingOrder.variation = resolved.variation;
-
-       // Support variation and product aliases inside order.items array if present
-       if (order.items && Array.isArray(order.items) && order.items.length > 0) {
-           shippingOrder.items = order.items.map((it: any) => {
-               const itResolved = resolveShippingDisplayNames(
-                   { productName: it.name || it.productName, variation: it.variation || it.variationName, sku: it.sku },
-                   inventoryProducts
-               );
-               return {
-                   ...it,
-                   name: itResolved.productName,
-                   productName: itResolved.productName,
-                   variation: itResolved.variation,
-                   variationName: itResolved.variation
-               };
-           });
-       }
-    }
-
-    // Resolve & normalize parcel weight (الميزان) to kg
-    const resolvedWeight = (customWeight !== undefined && Number(customWeight) > 0)
-      ? normalizeWeightToKg(customWeight)
-      : calculateOrderShippingWeight(order, inventoryProducts, settings?.defaultShippingWeight || 1);
-
-    shippingOrder.calculatedWeight = resolvedWeight;
-    shippingOrder.weight = resolvedWeight;
+    // Prepare shipping order with strictly synchronized items, 3-tier alias hierarchy, and parcel weight
+    const shippingOrder = prepareOrderForShipping(order, inventoryProducts, customWeight);
+    const resolvedWeight = shippingOrder.calculatedWeight;
     if (focusModeOrderId === order.id) {
        const currentIndex = filteredOrders.findIndex(o => o.id === order.id);
        if (currentIndex > -1 && currentIndex < filteredOrders.length - 1) {
@@ -1149,7 +1118,8 @@ export function OrdersList() {
       if (finalCity.toLowerCase().includes('ain azal') || finalCity.includes('عين ازال') || finalCity.includes('عين أزال')) {
          finalCity = 'Ain Azel';
       }
-      await updateOrder(editingId, { ...editDraft, city: finalCity });
+      const syncedDraft = syncOrderItems({ ...editDraft, city: finalCity }, inventoryProducts);
+      await updateOrder(editingId, syncedDraft);
     }
     setEditingId(null);
     setEditDraft(null);
@@ -3838,7 +3808,13 @@ export function OrdersList() {
                        {shippingIntegration ? (
                          <button
                            disabled={shippingLoading === focusedOrder.id}
-                           onClick={() => handlePushToShipping(focusedOrder, shippingIntegration)}
+                           onClick={async () => {
+                             const draftToUse = focusEditDraft ? syncOrderItems({ ...focusedOrder, ...focusEditDraft }, inventoryProducts) : focusedOrder;
+                             if (focusEditDraft) {
+                               await updateOrder(focusedOrder.id, draftToUse);
+                             }
+                             await handlePushToShipping(draftToUse, shippingIntegration);
+                           }}
                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-2xl flex items-center justify-center gap-2 text-sm font-black transition-all shadow-md active:scale-95 disabled:opacity-50"
                          >
                            {shippingLoading === focusedOrder.id ? (

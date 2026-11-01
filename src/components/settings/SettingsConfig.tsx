@@ -659,6 +659,10 @@ export function SettingsConfig() {
         returnCostMode: returnCostMode,
         returnMonthlySubscription: Number(returnMonthlySub) || 0,
         returnCost: Number(returnCost) || 0,
+        defaultDeliveryCompany: settings.defaultDeliveryCompany || '',
+        defaultConfirmedBy: settings.defaultConfirmedBy || '',
+        defaultStatus1: settings.defaultStatus1 || '',
+        defaultStatus2: settings.defaultStatus2 || '',
       });
       toast.success('تم حفظ كافة التغييرات والألوان وطريقة احتساب المرتجع في قاعدة البيانات بنجاح! 💾');
     } catch (err: any) {

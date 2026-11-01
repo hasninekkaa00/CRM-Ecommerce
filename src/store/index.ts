@@ -1569,60 +1569,12 @@ export const useStore = create<AppState>()((set, get) => ({
   },
 
   updateSettings: async (updates) => {
-    const currentSettings = get().settings || {
-      status1Options: ['جديد', 'قيد المراجعة', 'مؤكد', 'ملغى', 'مؤجل', 'لا يرد'],
-      status2Options: ['قيد التجهيز', 'تم الشحن', 'في الطريق', 'مستلم', 'مرتجع', 'قابلة للشحن'],
-      deliveryCompanies: ['أرامكس', 'سمسا', 'ياليدين', 'مايان', 'زاجل', 'توصيل محلي'],
-      confirmers: [],
-      inventoryManagementMode: 'local',
-      tags: DEFAULT_TAGS,
-      statusColors: DEFAULT_STATUS_COLORS,
-      returnCostMode: 'per_order',
-      returnMonthlySubscription: 0,
-      returnCost: 400,
-      orderRowColorMode: 'auto',
-    };
+    const currentSettings = get().settings || getInitialSettings() || ({} as SystemSettings);
     
-    // Construct complete non-partial object to satisfy all schema requirements and allow complete array overrides
+    // Construct merged state for in-memory and local storage
     const newSettings: SystemSettings = {
       ...currentSettings,
-      status1Options: updates.status1Options !== undefined ? updates.status1Options : (currentSettings.status1Options || []),
-      status2Options: updates.status2Options !== undefined ? updates.status2Options : (currentSettings.status2Options || []),
-      deliveryCompanies: updates.deliveryCompanies !== undefined ? updates.deliveryCompanies : (currentSettings.deliveryCompanies || []),
-      confirmers: updates.confirmers !== undefined ? updates.confirmers : (currentSettings.confirmers || []),
-      defaultStatus1: updates.defaultStatus1 !== undefined ? updates.defaultStatus1 : (currentSettings.defaultStatus1 || ''),
-      defaultStatus2: updates.defaultStatus2 !== undefined ? updates.defaultStatus2 : (currentSettings.defaultStatus2 || ''),
-      defaultDeliveryCompany: updates.defaultDeliveryCompany !== undefined ? updates.defaultDeliveryCompany : (currentSettings.defaultDeliveryCompany || ''),
-      defaultConfirmedBy: updates.defaultConfirmedBy !== undefined ? updates.defaultConfirmedBy : (currentSettings.defaultConfirmedBy || ''),
-      productCosts: updates.productCosts !== undefined ? updates.productCosts : currentSettings.productCosts,
-      returnCost: updates.returnCost !== undefined ? updates.returnCost : (currentSettings.returnCost ?? 400),
-      returnCostMode: updates.returnCostMode !== undefined ? updates.returnCostMode : (currentSettings.returnCostMode || 'per_order'),
-      returnMonthlySubscription: updates.returnMonthlySubscription !== undefined ? updates.returnMonthlySubscription : (currentSettings.returnMonthlySubscription || 0),
-      exchangeRate: updates.exchangeRate !== undefined ? updates.exchangeRate : currentSettings.exchangeRate,
-      autoSyncEnabled: updates.autoSyncEnabled !== undefined ? updates.autoSyncEnabled : currentSettings.autoSyncEnabled,
-      autoSyncIntervalSeconds: updates.autoSyncIntervalSeconds !== undefined ? updates.autoSyncIntervalSeconds : currentSettings.autoSyncIntervalSeconds,
-      metaAdsToken: updates.metaAdsToken !== undefined ? updates.metaAdsToken : currentSettings.metaAdsToken,
-      notificationStatuses: updates.notificationStatuses !== undefined ? updates.notificationStatuses : currentSettings.notificationStatuses,
-      soundNotificationEnabled: updates.soundNotificationEnabled !== undefined ? updates.soundNotificationEnabled : currentSettings.soundNotificationEnabled,
-      visualNotificationEnabled: updates.visualNotificationEnabled !== undefined ? updates.visualNotificationEnabled : currentSettings.visualNotificationEnabled,
-      lowInventoryAlertEnabled: updates.lowInventoryAlertEnabled !== undefined ? updates.lowInventoryAlertEnabled : currentSettings.lowInventoryAlertEnabled,
-      lowInventoryThreshold: updates.lowInventoryThreshold !== undefined ? updates.lowInventoryThreshold : currentSettings.lowInventoryThreshold,
-      inventoryManagementMode: updates.inventoryManagementMode !== undefined ? updates.inventoryManagementMode : (currentSettings.inventoryManagementMode || 'local'),
-      shippingIntegrations: updates.shippingIntegrations !== undefined ? updates.shippingIntegrations : currentSettings.shippingIntegrations,
-      themePalette: updates.themePalette !== undefined ? updates.themePalette : currentSettings.themePalette,
-      customThemePalettes: updates.customThemePalettes !== undefined ? updates.customThemePalettes : currentSettings.customThemePalettes,
-      smsEnabled: updates.smsEnabled !== undefined ? updates.smsEnabled : currentSettings.smsEnabled,
-      smsGateway: updates.smsGateway !== undefined ? updates.smsGateway : currentSettings.smsGateway,
-      smsAlgerieToken: updates.smsAlgerieToken !== undefined ? updates.smsAlgerieToken : currentSettings.smsAlgerieToken,
-      smsAlgerieSender: updates.smsAlgerieSender !== undefined ? updates.smsAlgerieSender : currentSettings.smsAlgerieSender,
-      smsTwilioSid: updates.smsTwilioSid !== undefined ? updates.smsTwilioSid : currentSettings.smsTwilioSid,
-      smsTwilioToken: updates.smsTwilioToken !== undefined ? updates.smsTwilioToken : currentSettings.smsTwilioToken,
-      smsTwilioNumber: updates.smsTwilioNumber !== undefined ? updates.smsTwilioNumber : currentSettings.smsTwilioNumber,
-      smsTemplates: updates.smsTemplates !== undefined ? updates.smsTemplates : currentSettings.smsTemplates,
-      smsAutoSendOnStatus: updates.smsAutoSendOnStatus !== undefined ? updates.smsAutoSendOnStatus : currentSettings.smsAutoSendOnStatus,
-      tags: updates.tags !== undefined ? updates.tags : (currentSettings.tags !== undefined ? currentSettings.tags : DEFAULT_TAGS),
-      statusColors: updates.statusColors !== undefined ? { ...(currentSettings.statusColors || DEFAULT_STATUS_COLORS), ...updates.statusColors } : (currentSettings.statusColors || DEFAULT_STATUS_COLORS),
-      orderRowColorMode: updates.orderRowColorMode !== undefined ? updates.orderRowColorMode : (currentSettings.orderRowColorMode || 'auto'),
+      ...updates
     };
 
     set({ settings: newSettings });
@@ -1631,12 +1583,22 @@ export const useStore = create<AppState>()((set, get) => ({
       localStorage.setItem('app_system_settings', JSON.stringify(newSettings));
     } catch (e) {}
 
-    const plainSettings = JSON.parse(JSON.stringify(newSettings));
-    delete plainSettings.id;
-    // Protect deletedWooOrderIds from being accidentally overwritten by stale local state
-    delete plainSettings.deletedWooOrderIds; 
-    
-    await safeFirestoreWrite(() => setDoc(doc(db, 'settings', 'general'), plainSettings, { merge: true }), 'updateSettings');
+    // CRITICAL: Only send the actual explicitly updated fields to Firestore with { merge: true }!
+    // NEVER send the entire reconstructed object with fallback defaults, because any uninitialized
+    // property would permanently overwrite the user's customized database values (tags, shippingIntegrations, defaults, etc.).
+    const cleanUpdates: Record<string, any> = {};
+    for (const [key, val] of Object.entries(updates)) {
+      if (val !== undefined && key !== 'id' && key !== 'deletedWooOrderIds') {
+        cleanUpdates[key] = JSON.parse(JSON.stringify(val));
+      }
+    }
+
+    if (Object.keys(cleanUpdates).length > 0) {
+      await safeFirestoreWrite(
+        () => setDoc(doc(db, 'settings', 'general'), cleanUpdates, { merge: true }),
+        'updateSettings'
+      );
+    }
   },
 
   addTag: async (tag: OrderTag) => {

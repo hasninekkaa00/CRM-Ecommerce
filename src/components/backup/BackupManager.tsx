@@ -461,6 +461,15 @@ export const BackupManager: React.FC = () => {
           // Apply to Zustand store
           useStore.setState(stateToUpdate);
 
+          // Permanently persist restored settings to Firestore
+          if (previewBackupData.settings && store.updateSettings) {
+            try {
+              await store.updateSettings(previewBackupData.settings);
+            } catch (settingsErr) {
+              console.warn('Could not persist restored settings to Firestore:', settingsErr);
+            }
+          }
+
           // Force Sync to Firestore if supported
           if (store.forceSync) {
             try {

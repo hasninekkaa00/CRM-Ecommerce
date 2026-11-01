@@ -16,6 +16,7 @@ import { TablePagination } from '../common/TablePagination';
 import { ZeroOrNegativeProfitModal } from './ZeroOrNegativeProfitModal';
 import { AdvancedFinanceExportModal } from './AdvancedFinanceExportModal';
 import { FinanceTableRow } from './FinanceTableRow';
+import { RevenueTrendsAndProductImpact } from './RevenueTrendsAndProductImpact';
 
 const formatCurrency = (val: number) => {
   return Math.round(Number(val) || 0).toLocaleString('fr-FR');
@@ -196,7 +197,7 @@ export function ProfitSimulator() {
 
   const [chart1Mode, setChart1Mode] = useState<'cumulative' | 'daily'>('cumulative');
   const [chart2Mode, setChart2Mode] = useState<'both' | 'daily' | 'cumulative'>('both');
-  const [financeActiveTab, setFinanceActiveTab] = useState<'all' | 'overview' | 'table' | 'settings'>(
+  const [financeActiveTab, setFinanceActiveTab] = useState<'all' | 'overview' | 'trends' | 'table' | 'settings'>(
     () => (localStorage.getItem('finance_active_tab') as any) || 'all'
   );
   const [activeChartTab, setActiveChartTab] = useState<'all' | 'chart1' | 'chart2' | 'chart3' | 'hidden'>(
@@ -1758,6 +1759,19 @@ export function ProfitSimulator() {
 
           <button
             type="button"
+            onClick={() => setFinanceActiveTab('trends')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+              financeActiveTab === 'trends'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>تطور المداخيل ومردودية المنتجات</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setFinanceActiveTab('table')}
             className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
               financeActiveTab === 'table'
@@ -2537,6 +2551,33 @@ export function ProfitSimulator() {
       </div>
       )}
         </div>
+      )}
+
+      {/* Revenue Evolution Trends and Product Impact (هل المنتج مفيد أم جهد إضافي؟) */}
+      {(financeActiveTab === 'all' || financeActiveTab === 'trends') && (
+        <RevenueTrendsAndProductImpact
+          orders={orders}
+          inventoryProducts={inventoryProducts}
+          campaigns={campaigns}
+          campaignRecords={campaignRecords}
+          expenses={expenses}
+          settings={settings}
+          dateFilter={dateFilter}
+          startDate={start}
+          endDate={end}
+          customStart={customStart}
+          customEnd={customEnd}
+          productFilter={productFilter}
+          onSelectProductFilter={(prod) => {
+            setProductFilter(prod);
+            setGlobalProductFilter(prod);
+          }}
+          getOrderCosts={getOrderCosts}
+          getDeliveryDate={getDeliveryDate}
+          getReturnDate={getReturnDate}
+          getShippingDate={getShippingDate}
+          mapStatusFn={mapStatusToStatus2}
+        />
       )}
 
       {/* Orders Finance Table */}

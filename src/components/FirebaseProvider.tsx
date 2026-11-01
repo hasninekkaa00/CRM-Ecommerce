@@ -216,17 +216,40 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           if (docSnap.exists()) {
             const rawData = docSnap.data() as SystemSettings;
             const fallbackDelivery = ['ياليدين', 'مايسترو', 'زد آر إكسبريس', 'إيكوتراك', 'أرامكس', 'سمسا', 'توصيل محلي'];
-            const resolvedDelivery = Array.isArray(rawData.deliveryCompanies) && rawData.deliveryCompanies.length > 0
-              ? rawData.deliveryCompanies
-              : fallbackDelivery;
-
-            // CRITICAL FIX: Only seed DEFAULT_TAGS if tags property is completely undefined in Firestore!
-            // If the user has saved tags (even custom or modified), preserve them permanently!
-            const hasTagsInDb = Array.isArray(rawData.tags);
             const cachedSettings = useStore.getState().settings;
-            const resolvedTags = hasTagsInDb ? rawData.tags : (cachedSettings?.tags !== undefined ? cachedSettings.tags : DEFAULT_TAGS);
 
-            // CRITICAL FIX: Preserve returnCostMode and return subscription
+            // Preserve delivery companies array if present in Firestore (even if empty or customized)
+            const resolvedDelivery = Array.isArray(rawData.deliveryCompanies)
+              ? rawData.deliveryCompanies
+              : (cachedSettings?.deliveryCompanies || fallbackDelivery);
+
+            // CRITICAL: Always prioritize tags saved in Firestore! If missing, fall back to cachedSettings or DEFAULT_TAGS
+            const hasTagsInDb = Array.isArray(rawData.tags);
+            const resolvedTags = hasTagsInDb 
+              ? rawData.tags 
+              : (cachedSettings?.tags !== undefined ? cachedSettings.tags : DEFAULT_TAGS);
+
+            // CRITICAL: Preserve linked shipping integrations (Expedigo / Ecotrack / Yalidine etc.)
+            const hasShippingInDb = Array.isArray(rawData.shippingIntegrations);
+            const resolvedShippingIntegrations = hasShippingInDb 
+              ? rawData.shippingIntegrations 
+              : (cachedSettings?.shippingIntegrations || []);
+
+            // CRITICAL: Preserve default order values (defaultDeliveryCompany, defaultConfirmedBy, defaultStatus1, defaultStatus2)
+            const defaultDeliveryCompany = rawData.defaultDeliveryCompany !== undefined 
+              ? rawData.defaultDeliveryCompany 
+              : (cachedSettings?.defaultDeliveryCompany || '');
+            const defaultConfirmedBy = rawData.defaultConfirmedBy !== undefined 
+              ? rawData.defaultConfirmedBy 
+              : (cachedSettings?.defaultConfirmedBy || '');
+            const defaultStatus1 = rawData.defaultStatus1 !== undefined 
+              ? rawData.defaultStatus1 
+              : (cachedSettings?.defaultStatus1 || '');
+            const defaultStatus2 = rawData.defaultStatus2 !== undefined 
+              ? rawData.defaultStatus2 
+              : (cachedSettings?.defaultStatus2 || '');
+
+            // CRITICAL: Preserve returnCostMode and return subscription
             const returnCostMode = rawData.returnCostMode || cachedSettings?.returnCostMode || 'per_order';
             const returnMonthlySubscription = rawData.returnMonthlySubscription !== undefined 
               ? rawData.returnMonthlySubscription 
@@ -235,7 +258,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               ? rawData.returnCost 
               : (cachedSettings?.returnCost ?? 400);
 
-            // CRITICAL FIX: Preserve statusColors and orderRowColorMode
+            // CRITICAL: Preserve statusColors and orderRowColorMode
             const statusColors = rawData.statusColors || cachedSettings?.statusColors || DEFAULT_STATUS_COLORS;
             const orderRowColorMode = rawData.orderRowColorMode || cachedSettings?.orderRowColorMode || 'auto';
 
@@ -244,6 +267,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               ...rawData, 
               deliveryCompanies: resolvedDelivery,
               tags: resolvedTags,
+              shippingIntegrations: resolvedShippingIntegrations,
+              defaultDeliveryCompany,
+              defaultConfirmedBy,
+              defaultStatus1,
+              defaultStatus2,
               returnCostMode,
               returnMonthlySubscription,
               returnCost,
@@ -255,7 +283,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
             // Proactively ensure essential fields are permanently written in Firestore doc if missing
             const missingInDb: Partial<SystemSettings> = {};
-            if (!hasTagsInDb) missingInDb.tags = resolvedTags;
+            if (!hasTagsInDb && resolvedTags) missingInDb.tags = resolvedTags;
+            if (!hasShippingInDb && resolvedShippingIntegrations.length > 0) missingInDb.shippingIntegrations = resolvedShippingIntegrations;
+            if (rawData.defaultDeliveryCompany === undefined && defaultDeliveryCompany) missingInDb.defaultDeliveryCompany = defaultDeliveryCompany;
+            if (rawData.defaultConfirmedBy === undefined && defaultConfirmedBy) missingInDb.defaultConfirmedBy = defaultConfirmedBy;
+            if (rawData.defaultStatus1 === undefined && defaultStatus1) missingInDb.defaultStatus1 = defaultStatus1;
+            if (rawData.defaultStatus2 === undefined && defaultStatus2) missingInDb.defaultStatus2 = defaultStatus2;
             if (rawData.returnCostMode === undefined) missingInDb.returnCostMode = returnCostMode;
             if (rawData.returnMonthlySubscription === undefined) missingInDb.returnMonthlySubscription = returnMonthlySubscription;
             if (rawData.returnCost === undefined) missingInDb.returnCost = returnCost;
@@ -268,7 +301,8 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               });
             }
           } else {
-            // Default settings if non-existent
+            // Default settings if non-existent in Firestore
+            const cachedSettings = useStore.getState().settings;
             const defaultSettings: SystemSettings = {
               status1Options: ['جديد', 'قيد المراجعة', 'مؤكد', 'ملغى', 'مؤجل', 'لا يرد'],
               status2Options: ['قيد التجهيز', 'تم الشحن', 'في الطريق', 'مستلم', 'مرتجع', 'قابلة للشحن'],
@@ -281,10 +315,16 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               returnCostMode: 'per_order',
               returnMonthlySubscription: 0,
               returnCost: 400,
+              shippingIntegrations: [],
+              defaultDeliveryCompany: '',
+              defaultConfirmedBy: '',
+              defaultStatus1: '',
+              defaultStatus2: '',
+              ...(cachedSettings || {})
             };
             useStore.getState().setSettings(defaultSettings);
-            // Proactively create the document so the collection is created inside Firestore!
-            setDoc(doc(db, 'settings', 'general'), defaultSettings).catch(err => {
+            // Proactively create document with merge: true so no existing fields are ever overwritten
+            setDoc(doc(db, 'settings', 'general'), defaultSettings, { merge: true }).catch(err => {
               handleFetchError("create default settings", err);
             });
           }

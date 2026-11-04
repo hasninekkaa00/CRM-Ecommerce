@@ -192,7 +192,7 @@ function parseOrderItems(order: any, inventoryProducts: any[] = []): Array<{ pro
       return results;
     }
 
-    rawItems.forEach((item: any) => {
+    rawItems.forEach((item: any, idx: number) => {
       const itName = item.name || item.product_name || item.productName || item.title || order.productName || 'منتج غير محدد';
       
       let itVar = item.variation || item.variation_name || item.variationName || item.variant_title || item.variant || item.options || '';
@@ -214,6 +214,33 @@ function parseOrderItems(order: any, inventoryProducts: any[] = []): Array<{ pro
       }
 
       let itSku = item.sku || item.variation_sku || item.product_sku || '';
+      if (!itSku && order.sku) {
+        const skuTokens = String(order.sku).split(/[,;+]+/).map((s: string) => s.trim()).filter(Boolean);
+        if (skuTokens[idx]) {
+          itSku = skuTokens[idx];
+        } else if (skuTokens.length === 1) {
+          itSku = skuTokens[0];
+        }
+      }
+
+      if (!itSku && inventoryProducts && inventoryProducts.length > 0) {
+        const normName = normalizeText(itName);
+        for (const p of inventoryProducts) {
+          if (Array.isArray(p.variations) && itVar) {
+            const vNorm = normalizeText(cleanVariationName(String(itVar), itName));
+            const foundV = p.variations.find((v: any) => normalizeText(cleanVariationName(v.name || '', p.name)) === vNorm);
+            if (foundV && foundV.sku) {
+              itSku = foundV.sku;
+              break;
+            }
+          }
+          if (normalizeText(p.name) === normName && p.sku) {
+            itSku = p.sku;
+            break;
+          }
+        }
+      }
+
       const itQty = getSafeQty(item.quantity ?? item.qnts ?? item.qty ?? 1);
 
       // Check if itVar contains multiple split variations with explicit + (e.g. "2 x أحمر + 1 x أزرق")
@@ -565,9 +592,96 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
 
   // 1. Group & aggregate orders by base product and unified variants
   const productGroups: ProductGroup[] = useMemo(() => {
+    // A. Pre-index inventory products for instant, authoritative SKU lookups
+    const invExactSkuMap = new Map<string, { parent: any; variation: any }>();
+    const invCompactSkuMap = new Map<string, { parent: any; variation: any }>();
+    const invNormalizedNameMap = new Map<string, any>();
+
+    (inventoryProducts || []).forEach((p: any) => {
+      if (!p) return;
+      if (p.name) invNormalizedNameMap.set(normalizeText(p.name), p);
+
+      if (p.sku) {
+        const exact = p.sku.trim().toLowerCase();
+        const comp = compactSku(p.sku);
+        if (exact) invExactSkuMap.set(exact, { parent: p, variation: null });
+        if (comp) invCompactSkuMap.set(comp, { parent: p, variation: null });
+      }
+
+      if (Array.isArray(p.variations)) {
+        p.variations.forEach((v: any) => {
+          if (!v) return;
+          if (v.sku) {
+            const vExact = v.sku.trim().toLowerCase();
+            const vComp = compactSku(v.sku);
+            if (vExact) invExactSkuMap.set(vExact, { parent: p, variation: v });
+            if (vComp) invCompactSkuMap.set(vComp, { parent: p, variation: v });
+          }
+        });
+      }
+    });
+
+    // B. Parse all items across active orders
+    const allParsedItems: Array<{ productName: string; variation: string; sku: string; quantity: number; order: any }> = [];
+    activeOrders.forEach(order => {
+      const orderItems = parseOrderItems(order, inventoryProducts);
+      orderItems.forEach(item => {
+        allParsedItems.push({
+          productName: item.productName,
+          variation: item.variation,
+          sku: item.sku,
+          quantity: item.quantity,
+          order
+        });
+      });
+    });
+
+    // C. Pre-index unlisted items by SKU so all items sharing the same SKU share the same canonical product name
+    const unlistedSkuCanonicalMap = new Map<string, { canonicalName: string; canonicalSku: string }>();
+    const skuCandidates = new Map<string, { names: string[]; originalSkus: string[] }>();
+
+    allParsedItems.forEach(item => {
+      const cSku = compactSku(item.sku);
+      if (!cSku) return;
+      // If already matches inventory, inventory is the canonical source
+      if (invCompactSkuMap.has(cSku) || invExactSkuMap.has((item.sku || '').trim().toLowerCase())) {
+        return;
+      }
+      if (!skuCandidates.has(cSku)) {
+        skuCandidates.set(cSku, { names: [], originalSkus: [] });
+      }
+      const entry = skuCandidates.get(cSku)!;
+      const cleanN = (item.productName || '').trim();
+      if (cleanN && cleanN !== 'منتج غير محدد') {
+        entry.names.push(cleanN);
+      }
+      if (item.sku && !entry.originalSkus.includes(item.sku.trim())) {
+        entry.originalSkus.push(item.sku.trim());
+      }
+    });
+
+    skuCandidates.forEach((data, cSku) => {
+      // Pick best name: prefer longest non-generic name or most frequent
+      let bestName = 'منتج غير محدد';
+      if (data.names.length > 0) {
+        const freqMap = new Map<string, number>();
+        data.names.forEach(n => freqMap.set(n, (freqMap.get(n) || 0) + 1));
+        let maxCount = 0;
+        freqMap.forEach((count, n) => {
+          if (count > maxCount || (count === maxCount && n.length > bestName.length)) {
+            maxCount = count;
+            bestName = n;
+          }
+        });
+      }
+      const bestSku = data.originalSkus[0] || cSku;
+      unlistedSkuCanonicalMap.set(cSku, { canonicalName: bestName, canonicalSku: bestSku });
+    });
+
     // Map to hold aggregated items: key = canonical unique key
     const rawMap = new Map<string, {
       canonicalKey: string;
+      groupKey: string;
       parentName: string;
       variationName: string;
       displayVariation: string;
@@ -578,7 +692,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       matchedVariation: any;
     }>();
 
-    // Helper to resolve canonical identity from inventory products with SKU priority & strict product boundaries
+    // Helper to resolve canonical identity with 100% SKU priority & strict product boundaries
     const resolveItemIdentity = (pName: string, vName: string, skuStr: string) => {
       const cleanPName = (pName || 'منتج غير محدد').trim();
       const rawVName = (vName || '').trim();
@@ -586,108 +700,50 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       let dispVName = cleanVariationName(rawVName, cleanPName);
       const normPName = normalizeText(cleanPName);
       const normSku = cleanSku.toLowerCase();
+      const cSku = compactSku(cleanSku);
+
       let matchedParent: any = null;
       let matchedVariation: any = null;
 
       // =========================================================================
-      // STAGE 0: Match by SKU FIRST (As per user request: التعرف على المنتجات بناءا على sku)
+      // STAGE 0: Match by SKU FIRST (Strictly Authoritative - no restrictive name filtering)
       // =========================================================================
       if (cleanSku) {
-        const cSku = compactSku(cleanSku);
-        for (const p of (inventoryProducts || [])) {
-          const pNorm = normalizeText(p.name);
-          const isNameCompatible = !normPName || normPName === 'منتج غير محدد' || pNorm === normPName || pNorm.includes(normPName) || normPName.includes(pNorm);
-
-          // Check parent SKU
-          const pSku = (p.sku || '').trim().toLowerCase();
-          if (pSku && (pSku === normSku || compactSku(pSku) === cSku)) {
-            if (isNameCompatible) {
-              matchedParent = p;
-              break; // Found parent
-            }
-          }
-          // Check variations SKU
-          if (Array.isArray(p.variations)) {
-            const foundVar = p.variations.find((v: any) => {
-              const vSku = (v.sku || '').trim().toLowerCase();
-              return vSku && (vSku === normSku || compactSku(vSku) === cSku);
-            });
-            if (foundVar) {
-              if (isNameCompatible) {
-                matchedParent = p;
-                matchedVariation = foundVar;
-                break;
-              }
-            }
-          }
+        const skuMatch = invExactSkuMap.get(normSku) || (cSku ? invCompactSkuMap.get(cSku) : null);
+        if (skuMatch) {
+          matchedParent = skuMatch.parent;
+          matchedVariation = skuMatch.variation;
         }
       }
 
       // =========================================================================
-      // STAGE 1: Match Parent Product (Fallback to name if SKU failed or missing)
-
+      // STAGE 1: Match Parent Product if not matched by SKU
       // =========================================================================
+      if (!matchedParent && normPName && normPName !== 'منتج غير محدد') {
+        // 1A. Exact normalized product name match
+        matchedParent = invNormalizedNameMap.get(normPName);
 
-      // 1A. Exact normalized product name match (Highest Confidence)
-      if (!matchedParent && normPName) {
-        matchedParent = (inventoryProducts || []).find((p: any) => {
-          if (!p.name) return false;
-          return normalizeText(p.name) === normPName;
-        });
-      }
-
-      // 1B. If cleanSku is provided, check if it matches a parent product SKU or a variation in the matched product
-      if (!matchedParent && cleanSku) {
-        const cSku = compactSku(cleanSku);
-        // Check if matches parent SKU directly
-        matchedParent = (inventoryProducts || []).find((p: any) => {
-          const pSku = (p.sku || '').trim().toLowerCase();
-          return pSku && (pSku === normSku || compactSku(pSku) === cSku);
-        });
-
-        // Or variation SKU across inventory if unique
+        // 1B. Word-boundary prefix match
         if (!matchedParent) {
           for (const p of (inventoryProducts || [])) {
-            if (Array.isArray(p.variations) && p.variations.length > 0) {
-              const foundVar = p.variations.find((v: any) => {
-                const vSku = (v.sku || '').trim().toLowerCase();
-                return vSku && (vSku === normSku || compactSku(vSku) === cSku);
-              });
-              if (foundVar) {
-                // Confirm this variation's parent is related or order product name is generic
-                const pNorm = normalizeText(p.name);
-                if (!normPName || pNorm.includes(normPName) || normPName.includes(pNorm) || cleanPName === 'منتج غير محدد') {
-                  matchedParent = p;
-                  matchedVariation = foundVar;
-                  break;
+            if (!p.name) continue;
+            const pNorm = normalizeText(p.name);
+            if (normPName.startsWith(pNorm + ' ') || normPName.startsWith(pNorm + ' -') || normPName === pNorm) {
+              matchedParent = p;
+              if (!dispVName) {
+                const remainder = cleanPName.substring(p.name.length).replace(/^[-_/\\|:\s]+/, '').trim();
+                if (remainder) {
+                  dispVName = cleanVariationName(remainder, p.name);
                 }
               }
+              break;
             }
-          }
-        }
-      }
-
-      // 1C. Word-boundary prefix match for parent product (Avoid greedy partial word matching)
-      if (!matchedParent && normPName) {
-        for (const p of (inventoryProducts || [])) {
-          if (!p.name) continue;
-          const pNorm = normalizeText(p.name);
-          // Check if order name starts with product name followed by space or hyphen
-          if (normPName.startsWith(pNorm + ' ') || normPName.startsWith(pNorm + ' -') || normPName === pNorm) {
-            matchedParent = p;
-            if (!dispVName) {
-              const remainder = cleanPName.substring(p.name.length).replace(/^[-_/\\|:\s]+/, '').trim();
-              if (remainder) {
-                dispVName = cleanVariationName(remainder, p.name);
-              }
-            }
-            break;
           }
         }
       }
 
       // =========================================================================
-      // STAGE 2: If matchedParent is found and has variations, match ONLY within its variations
+      // STAGE 2: If matchedParent is found and has variations, resolve variation if not matched yet
       // =========================================================================
       if (matchedParent && !matchedVariation && Array.isArray(matchedParent.variations) && matchedParent.variations.length > 0) {
         const candidateVarText = dispVName || rawVName;
@@ -695,10 +751,9 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
 
         // 2A. Match variation SKU
         if (cleanSku) {
-          const cSku = compactSku(cleanSku);
           matchedVariation = matchedParent.variations.find((v: any) => {
             const vSku = (v.sku || '').trim().toLowerCase();
-            return vSku && (vSku === normSku || compactSku(vSku) === cSku);
+            return vSku && (vSku === normSku || (cSku && compactSku(vSku) === cSku));
           });
         }
 
@@ -708,7 +763,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
           const cVarSku = compactSku(targetVarSku);
           matchedVariation = matchedParent.variations.find((v: any) => {
             const vSku = (v.sku || '').trim().toLowerCase();
-            return vSku && (vSku === targetVarSku || compactSku(vSku) === cVarSku);
+            return vSku && (vSku === targetVarSku || (cVarSku && compactSku(vSku) === cVarSku));
           });
         }
 
@@ -735,7 +790,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
           });
         }
 
-        // 2E. Strict token set equality (e.g. "أحمر XL" == "XL أحمر")
+        // 2E. Strict token set equality
         if (!matchedVariation && targetNormVar) {
           const targetTokensSorted = extractTokens(targetNormVar).sort().join(' ');
           if (targetTokensSorted) {
@@ -751,8 +806,15 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       // =========================================================================
       // STAGE 3: Derive canonical names, display variations, and SKU
       // =========================================================================
-      const finalParentName = matchedParent?.name || cleanPName;
-      
+      let finalParentName = matchedParent?.name;
+      if (!finalParentName) {
+        if (cSku && unlistedSkuCanonicalMap.has(cSku)) {
+          finalParentName = unlistedSkuCanonicalMap.get(cSku)!.canonicalName;
+        } else {
+          finalParentName = cleanPName;
+        }
+      }
+
       let finalVarName = dispVName;
       if (matchedVariation) {
         if (Array.isArray(matchedVariation.attributes) && matchedVariation.attributes.length > 0) {
@@ -775,21 +837,35 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
         }
       }
 
-      const finalSku = matchedVariation?.sku || cleanSku || matchedParent?.sku || '';
+      let finalSku = matchedVariation?.sku || cleanSku || matchedParent?.sku || '';
+      if (!finalSku && cSku && unlistedSkuCanonicalMap.has(cSku)) {
+        finalSku = unlistedSkuCanonicalMap.get(cSku)!.canonicalSku;
+      }
 
-      // STAGE 4: Construct deterministic canonical key to NEVER mix different variations
+      // STAGE 4: Construct deterministic canonical key to NEVER mix different variations or split items
       let canonicalKey = '';
-      if (matchedVariation) {
-        const vKey = matchedVariation.id || matchedVariation.sku || normalizeText(finalVarName);
-        canonicalKey = `inv_p_${matchedParent.id}_var_${vKey}`;
-      } else if (matchedParent) {
-        canonicalKey = `inv_p_${matchedParent.id}_custvar_${normalizeText(finalVarName)}_${normalizeText(finalSku || 'nosku')}`;
+      let groupKey = '';
+
+      if (matchedParent) {
+        groupKey = `inv_p_${matchedParent.id || normalizeText(matchedParent.name)}`;
+        if (matchedVariation) {
+          const vKey = matchedVariation.id || compactSku(matchedVariation.sku) || normalizeText(finalVarName);
+          canonicalKey = `${groupKey}_var_${vKey}`;
+        } else {
+          const vKey = compactSku(finalSku) || normalizeText(finalVarName) || 'main';
+          canonicalKey = `${groupKey}_custvar_${vKey}`;
+        }
       } else {
-        canonicalKey = `unlisted_p_${normalizeText(finalParentName)}_var_${normalizeText(finalVarName)}_${normalizeText(finalSku || 'nosku')}`;
+        // Unlisted product
+        const cFinalSku = compactSku(finalSku);
+        groupKey = cFinalSku ? `unlisted_sku_${cFinalSku}` : `unlisted_name_${normalizeText(finalParentName)}`;
+        const vKey = normalizeText(finalVarName) || cFinalSku || 'main';
+        canonicalKey = `${groupKey}_var_${vKey}`;
       }
 
       return {
         canonicalKey,
+        groupKey,
         parentName: finalParentName,
         variationName: rawVName,
         displayVariation: finalVarName,
@@ -808,7 +884,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
         existing.qty += qty;
         existing.orders.push({ order, requiredQty: qty });
 
-        // Update with better/richer metadata if available
+        // Update with richer metadata if available
         if (!existing.displayVariation && resolved.displayVariation) {
           existing.displayVariation = resolved.displayVariation;
         }
@@ -824,6 +900,7 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       } else {
         rawMap.set(key, {
           canonicalKey: key,
+          groupKey: resolved.groupKey,
           parentName: resolved.parentName,
           variationName: resolved.variationName,
           displayVariation: resolved.displayVariation,
@@ -836,19 +913,16 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       }
     };
 
-    // Process all orders in the active scope
-    activeOrders.forEach(order => {
-      const orderItems = parseOrderItems(order, inventoryProducts);
-      orderItems.forEach(item => {
-        addItem(item.productName, item.variation, item.sku, item.quantity, order);
-      });
+    // Add all parsed items from active orders
+    allParsedItems.forEach(item => {
+      addItem(item.productName, item.variation, item.sku, item.quantity, item.order);
     });
 
     // 2. Calculate stock, price, cost and match inventory for each variant
-    const processedVariations: VariationItem[] = [];
+    const processedVariations: (VariationItem & { groupKey: string; matchedParentRef: any })[] = [];
 
     rawMap.forEach((val) => {
-      const { parentName, variationName, displayVariation, sku, qty, orders, matchedParent, matchedVariation, canonicalKey } = val;
+      const { parentName, variationName, displayVariation, sku, qty, orders, matchedParent, matchedVariation, canonicalKey, groupKey } = val;
 
       let availableStock = 0;
       let hasInventoryMatch = false;
@@ -897,6 +971,8 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
 
       processedVariations.push({
         id: canonicalKey,
+        groupKey,
+        matchedParentRef: matchedParent,
         productName: parentName,
         variationName,
         displayVariation: finalDisplayVariation,
@@ -913,18 +989,27 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       });
     });
 
-    // 3. Group variations by Parent Product Name
-    const groupsMap = new Map<string, VariationItem[]>();
+    // 3. Group variations by canonical groupKey
+    const groupsMap = new Map<string, { parentName: string; matchedP: any; variations: VariationItem[] }>();
+
     processedVariations.forEach(item => {
-      if (!groupsMap.has(item.productName)) {
-        groupsMap.set(item.productName, []);
+      const gKey = item.groupKey;
+      if (!groupsMap.has(gKey)) {
+        const matchedP = item.matchedParentRef || inventoryProducts?.find((p: any) => normalizeText(p.name) === normalizeText(item.productName) || (p.sku && compactSku(p.sku) === compactSku(item.sku)));
+        groupsMap.set(gKey, {
+          parentName: matchedP?.name || item.productName,
+          matchedP,
+          variations: []
+        });
       }
-      groupsMap.get(item.productName)!.push(item);
+      groupsMap.get(gKey)!.variations.push(item);
     });
 
-    const result: ProductGroup[] = [];
+    const initialGroups: ProductGroup[] = [];
 
-    groupsMap.forEach((variationsList, pName) => {
+    groupsMap.forEach((gData) => {
+      const { parentName: pName, matchedP, variations: variationsList } = gData;
+
       // Sort variations by requiredQty desc
       variationsList.sort((a, b) => b.requiredQty - a.requiredQty);
 
@@ -934,13 +1019,12 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       const isFullyPrepared = totalVariantsCount > 0 && readyVariantsCount === totalVariantsCount;
       const hasShortage = variationsList.some(v => v.isShortage);
 
-      // Find parent product in inventory to get accurate display price & cost
-      const matchedP = inventoryProducts?.find((p: any) => normalizeText(p.name) === normalizeText(pName));
-      const productSku = matchedP?.sku || variationsList[0]?.sku || '';
+      // Derive accurate product SKU
+      const productSku = matchedP?.sku || variationsList.find(v => v.sku)?.sku || '';
       const displayPrice = matchedP ? getProductDisplayPrice(matchedP) : (variationsList[0]?.unitPrice ? `${variationsList[0].unitPrice} د.ج` : 'غير محدد');
       const displayCost = matchedP ? getProductDisplayCost(matchedP) : (variationsList[0]?.unitCost ? String(variationsList[0].unitCost) : '—');
 
-      result.push({
+      initialGroups.push({
         productName: pName,
         productSku,
         displayPrice,
@@ -954,8 +1038,63 @@ export function PickingListModal({ orders: passedOrders, allShippedOrders, onClo
       });
     });
 
-    // Sort product groups by totalQty desc
-    return result.sort((a, b) => b.totalQty - a.totalQty);
+    // 4. Final consolidation check: Merge any groups that share the exact same SKU so no product is ever split into two sections
+    const consolidatedBySkuOrName = new Map<string, ProductGroup>();
+
+    initialGroups.forEach(group => {
+      const groupSkuComp = compactSku(group.productSku);
+      let matchKey = '';
+
+      if (groupSkuComp) {
+        for (const [key, existing] of consolidatedBySkuOrName.entries()) {
+          if (compactSku(existing.productSku) === groupSkuComp) {
+            matchKey = key;
+            break;
+          }
+        }
+      }
+
+      if (!matchKey) {
+        matchKey = groupSkuComp ? `sku_${groupSkuComp}` : `name_${normalizeText(group.productName)}`;
+      }
+
+      if (consolidatedBySkuOrName.has(matchKey)) {
+        const existing = consolidatedBySkuOrName.get(matchKey)!;
+        // Merge variations
+        group.variations.forEach(newVar => {
+          const existingVar = existing.variations.find(v => 
+            v.id === newVar.id || 
+            (compactSku(v.sku) && compactSku(v.sku) === compactSku(newVar.sku) && normalizeText(v.displayVariation) === normalizeText(newVar.displayVariation))
+          );
+          if (existingVar) {
+            existingVar.requiredQty += newVar.requiredQty;
+            existingVar.orders.push(...newVar.orders);
+            if (newVar.availableStock > existingVar.availableStock) {
+              existingVar.availableStock = newVar.availableStock;
+            }
+            existingVar.isShortage = existingVar.hasInventoryMatch && existingVar.availableStock < existingVar.requiredQty;
+            existingVar.deficitQty = existingVar.isShortage ? Math.max(0, existingVar.requiredQty - existingVar.availableStock) : 0;
+          } else {
+            existing.variations.push(newVar);
+          }
+        });
+
+        // Recalculate group totals
+        existing.totalQty += group.totalQty;
+        existing.totalVariantsCount = existing.variations.length;
+        existing.readyVariantsCount = existing.variations.filter(v => checkedItems.has(v.id)).length;
+        existing.isFullyPrepared = existing.totalVariantsCount > 0 && existing.readyVariantsCount === existing.totalVariantsCount;
+        existing.hasShortage = existing.variations.some(v => v.isShortage);
+        if (!existing.productSku && group.productSku) {
+          existing.productSku = group.productSku;
+        }
+      } else {
+        consolidatedBySkuOrName.set(matchKey, { ...group });
+      }
+    });
+
+    const finalResult = Array.from(consolidatedBySkuOrName.values());
+    return finalResult.sort((a, b) => b.totalQty - a.totalQty);
   }, [activeOrders, inventoryProducts, isLocal, allOrders, purchaseInvoices, checkedItems]);
 
   // Overall Statistics

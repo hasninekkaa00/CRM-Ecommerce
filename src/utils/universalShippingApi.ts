@@ -62,7 +62,7 @@ export const WILAYAS_NAMES_LIST = [
   "أولاد جلال", "بني عباس", "عين صالح", "عين قزام", "تقرت", "جانت", "المغير", "المنيعة"
 ];
 
-export function extractWilayaAndCommune(order: any) {
+export function extractWilayaAndCommune(order: any, options?: { communeMappings?: any; cityCorrections?: any }) {
   let parsedWilaya = 0;
   const searchSources = [order.region, order.city, order.address].filter(Boolean) as string[];
 
@@ -141,15 +141,29 @@ export function extractWilayaAndCommune(order: any) {
       communeToCheck = String(order.stopdeskCommune || order.city || '').trim();
 
       if (communeToCheck) {
-        if (communeToCheck.toLowerCase().includes('ain azal') || communeToCheck.includes('عين ازال') || communeToCheck.includes('عين أزال')) {
+        // 0. Check custom communeMappings or cityCorrections
+        const customTarget = (options?.communeMappings && (options.communeMappings[communeToCheck] || (order.city && options.communeMappings[order.city]) || (order.stopdeskCommune && options.communeMappings[order.stopdeskCommune]))) ||
+                             (options?.cityCorrections && (options.cityCorrections[communeToCheck] || (order.city && options.cityCorrections[order.city]) || (order.stopdeskCommune && options.cityCorrections[order.stopdeskCommune])));
+
+        if (customTarget) {
+          const targetStr = String(customTarget).trim();
+          matchingCity = wilayaCommunes.find((c: any) => c.nom.toLowerCase() === targetStr.toLowerCase()) ||
+                         (ecotrackCommunesData && (ecotrackCommunesData as any[]).find((c: any) => c.nom.toLowerCase() === targetStr.toLowerCase()));
+          if (!matchingCity) {
+            matchingCity = { nom: targetStr, wilaya_id: parsedWilaya, has_stop_desk: isStopDesk ? 1 : 0 };
+          }
+        }
+
+        if (!matchingCity && (communeToCheck.toLowerCase().includes('ain azal') || communeToCheck.includes('عين ازال') || communeToCheck.includes('عين أزال'))) {
           communeToCheck = 'Ain Azel';
         }
 
-        
         // 1. Direct case-insensitive match
-        matchingCity = wilayaCommunes.find((c: any) => 
-           c.nom.toLowerCase() === communeToCheck.toLowerCase()
-        );
+        if (!matchingCity) {
+          matchingCity = wilayaCommunes.find((c: any) => 
+             c.nom.toLowerCase() === communeToCheck.toLowerCase()
+          );
+        }
 
         // 2. Check if it strictly maps to Arabic Wilaya names
         if (!matchingCity) {
@@ -388,7 +402,8 @@ export function buildEcoTrackPayload(order: any) {
  */
 export async function createShippingOrder(
   order: any, 
-  integration: { domain?: string; token?: string; name?: string }
+  integration: { domain?: string; token?: string; name?: string },
+  options?: { communeMappings?: any; cityCorrections?: any }
 ): Promise<{ success: boolean; tracking?: string; message?: string; data?: any; details?: any }> {
   if (!integration || !integration.token) {
     return { success: false, message: 'مفتاح الربط (Token) غير متوفر لشركة الشحن.' };
@@ -407,7 +422,9 @@ export async function createShippingOrder(
       body: JSON.stringify({
         domain: targetDomain,
         token: integration.token,
-        order: order
+        order: order,
+        communeMappings: options?.communeMappings,
+        cityCorrections: options?.cityCorrections
       })
     });
 

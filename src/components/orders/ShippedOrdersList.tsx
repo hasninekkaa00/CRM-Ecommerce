@@ -16,6 +16,7 @@ const translateActivityStatus = (status: string) => {
   if (!status) return '';
   const lowerStatus = String(status).toLowerCase().trim().replace(/[\s_-]+/g, '');
   const map: Record<string, string> = {
+    // Initial / Creation / Deposited at Carrier
     'orderinformationreceivedbycarrier': 'جاهزة للإرسال',
     'created': 'جاهزة للإرسال',
     'prêtàexpédier': 'جاهزة للإرسال',
@@ -28,13 +29,108 @@ const translateActivityStatus = (status: string) => {
     'enregistre': 'جاهزة للإرسال',
     'demanded\'enlèvement': 'جاهزة للإرسال',
     'demanded\'expedition': 'جاهزة للإرسال',
-    'picked': 'تم استلام الطلبية',
-    'acceptedbycarrier': 'مستلمة في مركز الفرز (Hub)',
+    'nonexpedie': 'جاهزة للإرسال',
+    'nonexpédié': 'جاهزة للإرسال',
+    'picked': 'جاهزة للإرسال (تم الاستلام من البائع)',
+    'ramasse': 'جاهزة للإرسال (تم الاستلام من البائع)',
+    'ramassé': 'جاهزة للإرسال (تم الاستلام من البائع)',
+    'enleve': 'جاهزة للإرسال (تم الاستلام من البائع)',
+    'enlevé': 'جاهزة للإرسال (تم الاستلام من البائع)',
+    'depot': 'جاهزة للإرسال (تم الإيداع في الشركة)',
+    'dépot': 'جاهزة للإرسال (تم الإيداع في الشركة)',
+    'dépôt': 'جاهزة للإرسال (تم الإيداع في الشركة)',
+    'depose': 'جاهزة للإرسال (تم الإيداع في الشركة)',
+    'déposé': 'جاهزة للإرسال (تم الإيداع في الشركة)',
+
+    // In Transit - Hub / Center / Transfer / Wilaya transport
+    'acceptedbycarrier': 'في الطريق (مركز الفرز)',
+    'reçupartransporteur': 'في الطريق (مركز الفرز)',
+    'recupartransporteur': 'في الطريق (مركز الفرز)',
+    'receptionhub': 'في الطريق (وصلت إلى مركز الفرز)',
+    'recuhub': 'في الطريق (وصلت إلى مركز الفرز)',
+    'reçuhub': 'في الطريق (وصلت إلى مركز الفرز)',
+    'recuauhub': 'في الطريق (وصلت إلى مركز الفرز)',
+    'reçuauhub': 'في الطريق (وصلت إلى مركز الفرز)',
+    'recuaucentre': 'في الطريق (وصلت إلى المركز)',
+    'reçuaucentre': 'في الطريق (وصلت إلى المركز)',
+    'centredetri': 'في الطريق (في مركز الفرز)',
+    'entransit': 'في الطريق (Transit)',
+    'transit': 'في الطريق (Transit)',
+    'envoyage': 'في الطريق بين المراكز والولايات',
+    'voyage': 'في الطريق بين المراكز والولايات',
+    'enroute': 'في الطريق',
+    'route': 'في الطريق',
+    'transfert': 'في الطريق (تحويل للمركز/الولاية)',
+    'entransfert': 'في الطريق (تحويل للمركز/الولاية)',
+    'acheminement': 'في الطريق (شحن وتوجيه للولاية)',
+    'encoursdacheminement': 'في الطريق (شحن وتوجيه للولاية)',
+    'expedie': 'في الطريق (تم الشحن نحو الولاية)',
+    'expédié': 'في الطريق (تم الشحن نحو الولاية)',
+
+    // Driver / Out for delivery
     'dispatchedtodriver': 'قيد التوصيل (موزعة للمندوب)',
+    'dispatched_to_driver': 'قيد التوصيل (موزعة للمندوب)',
+    'dispatched': 'موزعة للمندوب للتوصيل',
+    'affecteaulivreur': 'موزعة للمندوب للتوصيل',
+    'affectéaulivreur': 'موزعة للمندوب للتوصيل',
+    'assigneaulivreur': 'موزعة للمندوب للتوصيل',
+    'aveclelivreur': 'مع المندوب للتوصيل',
+    'sortieenlivraison': 'خرجت للتوصيل مع المندوب',
+    'sortiepourlivraison': 'خرجت للتوصيل مع المندوب',
+    'sortielivraison': 'خرجت للتوصيل مع المندوب',
+    'sortie': 'خرجت للتوصيل',
+    'enlivraison': 'قيد التوصيل مع المندوب',
+    'livraisonencours': 'قيد التوصيل مع المندوب',
+    'encoursdelivraison': 'قيد التوصيل مع المندوب',
+    'encours': 'قيد التوصيل والتوزيع',
+    'entournee': 'في جولة التوزيع مع المندوب',
+    'entournée': 'في جولة التوزيع مع المندوب',
+    'tournee': 'في جولة التوزيع',
+    'tournée': 'في جولة التوزيع',
+    'distribution': 'قيد التوزيع والتسليم',
+    'encoursdedistribution': 'قيد التوزيع والتسليم',
+
+    // Attempts / Postponed (In Transit)
     'attemptdelivery': 'محاولة توصيل',
+    'tentativedelivraison': 'محاولة توصيل',
+    'tentative': 'محاولة توصيل',
+    'pasdereponse': 'محاولة توصيل - لا يرد',
+    'pasderéponse': 'محاولة توصيل - لا يرد',
+    'nerepondpas': 'محاولة توصيل - الزبون لا يرد',
+    'nerépondpas': 'محاولة توصيل - الزبون لا يرد',
+    'injoignable': 'محاولة توصيل - غير متاح',
+    'nonjoignable': 'محاولة توصيل - غير متاح',
+    'reporte': 'تأجيل الموعد بطلب الزبون',
+    'reporté': 'تأجيل الموعد بطلب الزبون',
+    'postponed': 'تأجيل موعد التسليم',
+    'programme': 'تمت برمجة موعد التوصيل',
+    'programmé': 'تمت برمجة موعد التوصيل',
+    'reprogramme': 'إعادة جدولة موعد التوصيل',
+    'reprogrammé': 'إعادة جدولة موعد التوصيل',
+    'rdv': 'موعد توصيل محدد',
+    'rendezvous': 'موعد توصيل محدد',
+    'horszone': 'خارج نطاق التغطية مؤقتاً',
+
+    // Returns
     'returnasked': 'طلب إرجاع',
     'returnintransit': 'مرتجع في الطريق',
     'returnreceived': 'تم استقبال المرتجع',
+    'retour': 'مرتجع',
+    'retourné': 'مرتجع',
+    'retourne': 'مرتجع',
+    'returned': 'مرتجع',
+    'retourhub': 'مرتجع في المركز',
+    'retourclient': 'مرتجع من الزبون',
+    'deliveryfailed': 'فشل التوصيل',
+    'refuse': 'رفض الاستلام (مرتجع)',
+    'refusé': 'رفض الاستلام (مرتجع)',
+    'canceled': 'ملغى',
+    'cancelled': 'ملغى',
+    'echec': 'فشل التسليم (مرتجع)',
+    'echoue': 'فشل التسليم (مرتجع)',
+    'échoué': 'فشل التسليم (مرتجع)',
+
+    // Delivered
     'livred': 'تم التوصيل',
     'livré': 'تم التوصيل',
     'livre': 'تم التوصيل',
@@ -46,12 +142,8 @@ const translateActivityStatus = (status: string) => {
     'payé': 'تم الدفع للمتجر',
     'paye': 'تم الدفع للمتجر',
     'paid': 'تم الدفع للمتجر',
-    'retour': 'مرتجع',
-    'retourné': 'مرتجع',
-    'returned': 'مرتجع',
-    'deliveryfailed': 'فشل التوصيل',
-    'canceled': 'ملغى',
-    'cancelled': 'ملغى'
+    'solde': 'تمت التسوية والتحصيل',
+    'soldé': 'تمت التسوية والتحصيل'
   };
   return map[lowerStatus] || status;
 };
@@ -215,73 +307,101 @@ export function ShippedOrdersList() {
     return orders.filter(o => !o.trashed && (o.shippingTrackingId || shippedStatus.includes(o.status2 || '')));
   }, [orders, shippedStatus]);
 
-  const mapStatusToStatus2 = (statusText: string, order?: any) => {
+  const mapStatusToStatus2 = (statusText: string, order?: any): string => {
     let s = (statusText || '').toLowerCase().trim();
-    
+
     const isGeneric = s === 'تم الشحن' || s === '' || s === 'shipped';
     if (order && isGeneric) {
       const history = order.trackingHistory || [];
       if (history.length > 0) {
-         const lastStatus = (history[history.length - 1].status || '').toLowerCase().trim();
-         if (lastStatus && !lastStatus.includes('تم الشحن')) {
-            s = lastStatus;
-         }
-      } else if (order.notes) {
-         const lastNoteLine = order.notes.split('\n').pop();
-         if (lastNoteLine && lastNoteLine.includes('[حالة الشحن]:')) {
-             const extracted = lastNoteLine.split('[حالة الشحن]:')[1].split('-')[0].trim().toLowerCase();
-             if (extracted) s = extracted;
-         }
+        const lastStatus = (history[history.length - 1].status || '').toLowerCase().trim();
+        if (lastStatus) {
+          s = lastStatus;
+        }
+      }
+      if (s === 'تم الشحن' || s === '' || s === 'shipped') {
+        const notesLines = (order.notes || '').split('\n');
+        const trackingLine = notesLines.find((line: string) => line.includes('[حالة الشحن]:'));
+        if (trackingLine) {
+          const extracted = trackingLine.split('[حالة الشحن]:')[1].split('-')[0].trim().toLowerCase();
+          if (extracted) s = extracted;
+        }
       }
     }
 
     if (!s) return 'تم الشحن';
 
-    // 1. Ready / Created / Ready to Ship (جاهزة للإرسال / prêt à expédier / crééd) -> تم الشحن
+    // 1. Delivered / Paid -> مستلم
     if (
-      s.includes('prêt') || s.includes('pret') || s.includes('ready') ||
-      s.includes('جاهزة للإرسال') || s.includes('جاهزة لارسال') || s.includes('جاهز للإرسال') || s.includes('جاهز لارسال') ||
-      s.includes('جاهزة للشحن') || s.includes('جاهز للشحن') || s.includes('قابلة للشحن') ||
-      s.includes('انشاء') || s.includes('أنشئ') || s.includes('تسجيل') || s.includes('créé') || s.includes('cree') || s.includes('created') ||
-      s.includes('enregistré') || s.includes('enregistre') || s.includes('orderinformationreceivedbycarrier') || s.includes('demande') ||
-      s.includes('تم استقبال الطلبية من طرف شركة التوصيل') || s.includes('تم تسجيل الطلبية')
-    ) {
-      return 'تم الشحن';
-    }
-
-    // 2. Explicit Delivered / Received -> مستلم
-    if (
-      s.includes('تم التوصيل') || s.includes('تم تحصيل المبلغ') || s.includes('تم الدفع للمتجر') || 
+      s.includes('تم التوصيل') || s.includes('تم التسليم') || s.includes('تم تحصيل المبلغ') || s.includes('تم الدفع للمتجر') || 
       s.includes('livred') || s.includes('encaissed') || s.includes('payed') || s.includes('paid') ||
-      s.includes('livré') || s.includes('livre') || s.includes('delivered') || 
+      s.includes('livré') || s.includes('livre') || s.includes('delivered') || s.includes('soldé') || s.includes('solde') ||
       (s.includes('توصيل') && !s.includes('محاولة') && !s.includes('شركة التوصيل') && !s.includes('قيد') && !s.includes('رسوم') && !s.includes('إلى') && !s.includes('مركز')) ||
-      (s.includes('مستلم') && !s.includes('مركز الفرز') && !s.includes('استلام') && !s.includes('شركة'))
+      (s.includes('مستلم') && !s.includes('مركز الفرز') && !s.includes('استلام') && !s.includes('شركة') && !s.includes('البائع'))
     ) {
       return 'مستلم';
     }
 
-    // 3. Explicit Returned -> مرتجع
+    // 2. Returned / Refused / Failed -> مرتجع
     if (
       s.includes('مرتجع') || s.includes('طلب إرجاع') || s.includes('فشل') || s.includes('إرجاع') || s.includes('مسترجع') ||
       s.includes('return') || s.includes('returned') || s.includes('retour') || s.includes('échoué') || 
-      s.includes('annul') || s.includes('echec') || s.includes('echoue') || s.includes('echoué') || s.includes('canceled') || s.includes('cancelled')
+      s.includes('annul') || s.includes('echec') || s.includes('echoue') || s.includes('echoué') || s.includes('canceled') || s.includes('cancelled') ||
+      s.includes('refusé') || s.includes('refuse') || s.includes('مرفوض') || s.includes('رفض')
     ) {
       return 'مرتجع';
     }
 
-    // 4. In Transit / Sorting Center / Out for Delivery -> في الطريق
-    if (
-      s.includes('محاولة توصيل') || s.includes('قيد التوصيل') || s.includes('قيد التوزيع') || s.includes('محاولة') ||
-      s.includes('مركز الفرز') || s.includes('الفرز') || s.includes('موزعة للمندوب') || s.includes('في الطريق') ||
-      s.includes('sortie') || s.includes('distribution') || s.includes('hub') || s.includes('centre de tri') || s.includes('transit') ||
-      s.includes('cours') || s.includes('vers') || s.includes('route') || s.includes('توجيه') || s.includes('dispatch') ||
-      s.includes('sorti') || s.includes('transfert') || s.includes('transfer') || s.includes('voyage') || s.includes('en voyage') ||
-      ((s.includes('expedie') || s.includes('expédié') || s.includes('expédition') || s.includes('expedition')) && !s.includes('prêt') && !s.includes('pret') && !s.includes('جاهز'))
-    ) {
+    // 3. Deposited at Carrier / Ready to Ship / In Company Desk -> تم الشحن (جاهزة للإرسال)
+    // الطلبيات التي تم وضعها في الشركة وتكون جاهزة للإرسال تبقى في حالة تم الشحن/جاهزة للإرسال
+    const isReadyOrDepositedAtCompany = 
+      (s.includes('جاهزة للإرسال') || s.includes('جاهزة لارسال') || s.includes('جاهز للإرسال') || s.includes('جاهز لارسال') ||
+       s.includes('جاهزة للشحن') || s.includes('جاهز للشحن') || s.includes('قابلة للشحن') || s.includes('تم الشحن') ||
+       s.includes('موضوعة في الشركة') || s.includes('في الشركة') || s.includes('تم وضعها') ||
+       s.includes('تم استلام الطلبية من البائع') || s.includes('تم استلام الطلبية') || s.includes('استلام من البائع') ||
+       s.includes('تم استقبال الطلبية من طرف شركة التوصيل') || s.includes('تم تسجيل الطلبية') || s.includes('تسجيل') ||
+       s.includes('انشاء') || s.includes('أنشئ') || s.includes('créé') || s.includes('cree') || s.includes('created') ||
+       s.includes('prêt') || s.includes('pret') || s.includes('ready') ||
+       s.includes('enregistré') || s.includes('enregistre') || s.includes('orderinformationreceivedbycarrier') || s.includes('demande') ||
+       s.includes('ramassé') || s.includes('ramasse') || s.includes('picked') || s.includes('enlevé') || s.includes('enleve') ||
+       s.includes('dépôt') || s.includes('depot') || s.includes('déposé') || s.includes('depose') || s.includes('au bureau')) &&
+      !s.includes('مركز الفرز') && !s.includes('centre de tri') && !s.includes('vers hub') && !s.includes('vers centre') &&
+      !s.includes('transit') && !s.includes('voyage') && !s.includes('vers wilaya') && !s.includes('نقل') && !s.includes('تحويل') &&
+      !s.includes('sortie') && !s.includes('livreur') && !s.includes('موزعة للمندوب') && !s.includes('قيد التوصيل') &&
+      !s.includes('محاولة');
+
+    if (isReadyOrDepositedAtCompany) {
+      return 'تم الشحن';
+    }
+
+    // 4. Transport to Center / Hub / Wilaya / Courier Delivery -> في الطريق
+    // لما يتم نقلها إلى المركز والولاية وغيرها أو خروجها للتوصيل تكون في الطريق
+    const isTransportOrTransit = 
+      // نقل إلى مركز الفرز أو المركز
+      s.includes('مركز الفرز') || s.includes('الفرز') || s.includes('centre de tri') || s.includes('vers hub') || s.includes('vers centre') ||
+      s.includes('وصلت إلى مركز الفرز') || s.includes('نقل إلى المركز') || s.includes('تحويل إلى المركز') || s.includes('hub') ||
+      // نقل وشحن بين الولايات
+      s.includes('en voyage') || s.includes('voyage') || s.includes('en transit') || s.includes('transit') ||
+      s.includes('vers wilaya') || s.includes('إلى ولاية') || s.includes('نقل إلى الولاية') || s.includes('في الطريق إلى') ||
+      s.includes('transfert') || s.includes('entransfert') || s.includes('acheminement') || s.includes('توجيه') || s.includes('en route') ||
+      // خروج وتوزيع مع المندوب للتوصيل
+      s.includes('sortie en livraison') || s.includes('sortie pour livraison') || s.includes('sortie') || s.includes('sorti') ||
+      s.includes('خرجت للتوصيل') || s.includes('خرج للتوصيل') || s.includes('dispatchedtodriver') || s.includes('dispatched') ||
+      s.includes('موزعة للمندوب') || s.includes('موزع للمندوب') || s.includes('مع المندوب') || s.includes('مع السائق') ||
+      s.includes('affecté au livreur') || s.includes('affecteaulivreur') || s.includes('livreur') || s.includes('driver') ||
+      s.includes('en livraison') || s.includes('livraison en cours') || s.includes('en cours de livraison') ||
+      s.includes('en tournée') || s.includes('tournee') || s.includes('distribution') ||
+      s.includes('قيد التوصيل') || s.includes('قيد التوزيع') || s.includes('في طريق التسليم') || s.includes('في الطريق') ||
+      // محاولة توصيل أو تأجيلات أثناء التوصيل
+      s.includes('محاولة توصيل') || s.includes('محاولة') || s.includes('tentative') || s.includes('attempt') ||
+      s.includes('تأجيل') || s.includes('مؤجل') || s.includes('مؤجلة') || s.includes('reporté') || s.includes('reporte') ||
+      s.includes('postponed') || s.includes('لا يرد') || s.includes('غير متاح') || s.includes('injoignable') || s.includes('خارج التغطية');
+
+    if (isTransportOrTransit) {
       return 'في الطريق';
     }
 
-    if (order && getAttemptCount(order) > 0) {
+    if (order && (getAttemptCount(order) > 0 || (order.status2 === 'في الطريق' && isTransportOrTransit))) {
       return 'في الطريق';
     }
 

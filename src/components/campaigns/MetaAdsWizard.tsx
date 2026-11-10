@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowRight, ArrowLeft, Facebook, Check, AlertCircle, RefreshCw, Link as LinkIcon, Key, CheckCircle2, Trash2, Edit3, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { X, ArrowRight, ArrowLeft, Facebook, Check, AlertCircle, RefreshCw, Link as LinkIcon, Key, CheckCircle2, Trash2, Edit3, ShieldCheck, Eye, EyeOff, Layers } from 'lucide-react';
 import { useStore } from '../../store';
 import toast from 'react-hot-toast';
 import { fetchAndMapMetaMetrics } from '../../utils/metaSync';
+import { buildUniqueProductsData, toggleProductSelection, isProductChecked } from '../../utils/campaignProductUtils';
 
 interface MetaAdsWizardProps {
   isOpen: boolean;
@@ -47,40 +48,7 @@ export function MetaAdsWizard({ isOpen, onClose }: MetaAdsWizardProps) {
   }, [isOpen, settings?.metaAdsToken]);
 
   const uniqueProductsData = React.useMemo(() => {
-    const list = new Map<string, { key: string, label: string }>();
-    const offerSkus = new Set<string>();
-
-    inventoryProducts.forEach(inv => {
-        if (!inv.name) return;
-        const isOffer = inv.local_is_offers !== undefined ? inv.local_is_offers : (inv.variations && inv.variations.some((v:any) => v.attributes?.some((a:any) => a.option && (a.option.includes('عرض') || a.option.includes('كمية') || a.option.includes('pack')))));
-
-        if (isOffer) {
-            if (inv.sku) list.set(inv.sku, { key: inv.sku, label: inv.name });
-            if (inv.variations) {
-                inv.variations.forEach((v:any) => { if (v.sku) offerSkus.add(v.sku); });
-            }
-        } else if (inv.variations && inv.variations.length > 0) {
-            if (inv.sku) list.set(inv.sku, { key: inv.sku, label: `${inv.name} (كل الأنواع)` });
-            
-            inv.variations.forEach((v:any) => {
-                const variationName = v.name || v.attributes?.map((a:any)=>a.option).join(' ') || '';
-                const key = v.sku;
-                const label = `${inv.name} - ${variationName}`;
-                if (key) list.set(key, { key, label });
-            });
-        } else {
-            const key = inv.sku;
-            if (key) list.set(key, { key, label: inv.name });
-        }
-    });
-
-    orders.forEach(o => {
-       if (o.sku && !list.has(o.sku) && !offerSkus.has(o.sku)) {
-          list.set(o.sku, { key: o.sku, label: o.productName || o.sku });
-       }
-    });
-
-    return Array.from(list.values()).sort((a,b) => a.label.localeCompare(b.label));
+    return buildUniqueProductsData(inventoryProducts, orders);
   }, [inventoryProducts, orders]);
 
   const fetchAdAccounts = async (overrideToken?: string) => {
@@ -519,34 +487,60 @@ export function MetaAdsWizard({ isOpen, onClose }: MetaAdsWizardProps) {
                               {selectedCampaigns[camp.id]?.length || 0} منتجات محددة
                            </span>
                         </div>
-                        <div className={`border rounded-xl p-2.5 max-h-40 overflow-y-auto bg-gray-50/50 grid grid-cols-1 md:grid-cols-2 gap-2 shadow-inner transition-colors ${selectedCampaigns[camp.id]?.length > 0 ? 'border-blue-300 bg-blue-50/10' : 'border-gray-200'}`}>
+                        <div className={`border rounded-xl p-2.5 max-h-48 overflow-y-auto bg-gray-50/50 flex flex-col gap-1.5 shadow-inner transition-colors ${selectedCampaigns[camp.id]?.length > 0 ? 'border-blue-300 bg-blue-50/10' : 'border-gray-200'}`}>
                           {uniqueProductsData.map((p) => {
-                             const isChecked = selectedCampaigns[camp.id]?.includes(p.key);
+                             const current = selectedCampaigns[camp.id] || [];
+                             const isChecked = isProductChecked(p, current);
                              return (
-                               <label key={p.key} className={`flex items-center gap-2.5 text-xs font-bold cursor-pointer p-2 rounded-lg transition-all border ${isChecked ? 'bg-white border-blue-200 shadow-2xs text-blue-900' : 'border-transparent hover:bg-white hover:border-gray-200 text-gray-700'}`}>
-                                 <input 
-                                   type="checkbox" 
-                                   checked={isChecked || false}
-                                   onChange={(e) => {
-                                      const current = selectedCampaigns[camp.id] || [];
-                                      if (e.target.checked) {
-                                         setSelectedCampaigns(prev => ({...prev, [camp.id]: [...current, p.key]}));
-                                      } else {
-                                         const newArr = current.filter(k => k !== p.key);
-                                         if (newArr.length > 0) {
-                                            setSelectedCampaigns(prev => ({...prev, [camp.id]: newArr}));
-                                         } else {
-                                            setSelectedCampaigns(prev => {
-                                               const newObj = {...prev};
-                                               delete newObj[camp.id];
-                                               return newObj;
-                                            });
-                                         }
-                                      }
-                                   }}
-                                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 transition-all"
-                                 />
-                                 <span className="truncate flex-1" title={p.label}>{p.label}</span>
+                               <label 
+                                 key={p.key} 
+                                 className={`flex items-center justify-between text-xs font-bold cursor-pointer p-2 rounded-lg transition-all border ${
+                                   p.isAllVariations 
+                                     ? (isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-2xs ring-1 ring-indigo-200' : 'bg-indigo-50/20 border-indigo-100 hover:border-indigo-200 text-gray-800')
+                                     : p.isVariation 
+                                     ? (isChecked ? 'bg-white border-blue-200 shadow-2xs text-blue-900 mr-4' : 'border-transparent hover:bg-white hover:border-gray-200 text-gray-700 mr-4')
+                                     : (isChecked ? 'bg-white border-blue-200 shadow-2xs text-blue-900' : 'border-transparent hover:bg-white hover:border-gray-200 text-gray-700')
+                                 }`}
+                               >
+                                 <div className="flex items-center gap-2 truncate min-w-0">
+                                   <input 
+                                     type="checkbox" 
+                                     checked={isChecked || false}
+                                     onChange={() => {
+                                        const updated = toggleProductSelection(p, current, uniqueProductsData);
+                                        if (updated.length > 0) {
+                                           setSelectedCampaigns(prev => ({...prev, [camp.id]: updated}));
+                                        } else {
+                                           setSelectedCampaigns(prev => {
+                                              const newObj = {...prev};
+                                              delete newObj[camp.id];
+                                              return newObj;
+                                           });
+                                        }
+                                     }}
+                                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 transition-all shrink-0"
+                                   />
+                                   {p.isAllVariations ? (
+                                     <div className="flex items-center gap-1.5 min-w-0">
+                                       <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                       <span className="truncate font-black text-gray-900" title={p.label}>{p.label}</span>
+                                     </div>
+                                   ) : p.isVariation ? (
+                                     <div className="flex items-center gap-1.5 min-w-0">
+                                       <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+                                       <span className="truncate text-gray-700" title={p.label}>{p.label}</span>
+                                     </div>
+                                   ) : (
+                                     <span className="truncate" title={p.label}>{p.label}</span>
+                                   )}
+                                 </div>
+                                 {p.isAllVariations ? (
+                                   <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 shrink-0 mr-2">
+                                     كل الموديلات ({p.variationsCount})
+                                   </span>
+                                 ) : (
+                                   <span className="text-[10px] text-gray-400 font-mono shrink-0 mr-2">{p.key}</span>
+                                 )}
                                </label>
                              );
                           })}

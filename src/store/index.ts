@@ -25,6 +25,7 @@ import { recordDeletedItem, removeDeletedRecord, getDeletedHistory } from '../ut
 import { showUndoToast } from '../utils/undoToast';
 import { universalSyncWooCommerce } from '../utils/universalWooCommerceApi';
 import { syncOrderItems } from '../utils/orderSyncUtils';
+import { resolveEcoTrackCommune } from '../utils/communeMatchingUtils';
 
 let cachedFeesData: any = null;
 let lastFeesFetchTime = 0;
@@ -165,6 +166,9 @@ export interface AppState {
   shippingBureaus: import('../types').ShippingBureau[];
   shippingDesks: Record<string, any[]>;
   fetchShippingDesks: (companyName: string) => Promise<void>;
+  shippingCommunes: Record<string, any[]>;
+  fetchShippingCommunes: (companyName: string, wilayaId?: number) => Promise<any[]>;
+  applyOfficialCommuneNamesToExistingOrders: (companyName?: string) => Promise<{ updatedCount: number }>;
   users: AppUser[];
   currentUserProfile: AppUser | null;
   confirmerInvoices: ConfirmerInvoice[];
@@ -303,6 +307,7 @@ export interface AppState {
   updateShippingBureau: (id: string, updates: Partial<import('../types').ShippingBureau>) => Promise<void>;
   deleteShippingBureau: (id: string) => Promise<void>;
   bulkUpsertShippingBureaus: (bureaus: import('../types').ShippingBureau[]) => Promise<void>;
+  replaceAllShippingBureaus: (bureaus: import('../types').ShippingBureau[]) => Promise<void>;
 
   bulkUpsertInventory: (products: InventoryProduct[]) => Promise<void>;
   restoreDeletedItem: (recordId: string) => Promise<void>;
@@ -343,6 +348,7 @@ export const useStore = create<AppState>()((set, get) => ({
   shippingInvoices: [],
   shippingBureaus: [],
   shippingDesks: {},
+  shippingCommunes: {},
   users: [],
   currentUserProfile: null,
   confirmerInvoices: [],
@@ -661,6 +667,121 @@ export const useStore = create<AppState>()((set, get) => ({
     }
   },
 
+  fetchShippingCommunes: async (companyName: string, wilayaId?: number) => {
+    const state = get();
+    const integration = state.settings?.shippingIntegrations?.find(i => i.name === companyName && i.isActive);
+    const domain = (integration?.domain || 'https://expedigo.ecotrack.dz').replace(/\/+$/, '');
+    let targetDomain = domain.startsWith('http') ? domain : `https://${domain}`;
+    
+    try {
+      const res = await fetch('/api/shipping/ecotrack/communes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          domain: targetDomain, 
+          token: integration?.token || '', 
+          wilaya_id: wilayaId || 0 
+        })
+      });
+      const json = await res.json();
+      if (json && json.success && Array.isArray(json.data)) {
+        set((s) => ({
+          shippingCommunes: { ...s.shippingCommunes, [companyName || 'default']: json.data }
+        }));
+        return json.data;
+      }
+      return [];
+    } catch (e) {
+      console.error("fetchShippingCommunes error:", e);
+      return [];
+    }
+  },
+
+  applyOfficialCommuneNamesToExistingOrders: async (companyName?: string) => {
+    try {
+      const state = get();
+      const orders = state.orders;
+      const settings = state.settings;
+      const targetCompany = companyName || settings?.defaultDeliveryCompany || '';
+      const companyMappings = (targetCompany && settings?.communeMappings?.[targetCompany]) || 
+                              settings?.communeMappings?.['default'] || 
+                              {};
+      const corrections = settings?.cityCorrections || {};
+      const newCorrections: Record<string, string> = { ...corrections };
+      let hasLearned = false;
+
+      const ordersToUpdate: { id: string; updates: Partial<Order> }[] = [];
+
+      for (const order of orders) {
+        const wilayaId = extractWilayaCode(order);
+        let changed = false;
+        const updates: Partial<Order> = {};
+
+        if (order.city) {
+          const raw = String(order.city).trim();
+          const resolved = resolveEcoTrackCommune(raw, wilayaId, companyMappings, newCorrections);
+          if (resolved.isResolved && resolved.finalNom && resolved.finalNom !== raw) {
+            updates.city = resolved.finalNom;
+            changed = true;
+            if (!newCorrections[raw]) {
+              newCorrections[raw] = resolved.finalNom;
+              hasLearned = true;
+            }
+          }
+        }
+
+        if (order.stopdeskCommune) {
+          const rawDesk = String(order.stopdeskCommune).trim();
+          const resolvedDesk = resolveEcoTrackCommune(rawDesk, wilayaId, companyMappings, newCorrections);
+          if (resolvedDesk.isResolved && resolvedDesk.finalNom && resolvedDesk.finalNom !== rawDesk) {
+            updates.stopdeskCommune = resolvedDesk.finalNom;
+            changed = true;
+            if (!newCorrections[rawDesk]) {
+              newCorrections[rawDesk] = resolvedDesk.finalNom;
+              hasLearned = true;
+            }
+          }
+        }
+
+        if (changed) {
+          ordersToUpdate.push({ id: order.id, updates });
+        }
+      }
+
+      if (ordersToUpdate.length > 0) {
+        // 1. Update in-memory state
+        set((s) => ({
+          orders: s.orders.map(o => {
+            const matched = ordersToUpdate.find(u => u.id === o.id);
+            return matched ? { ...o, ...matched.updates } : o;
+          })
+        }));
+
+        // 2. Persist to Firestore in batches
+        const batchSize = 400;
+        for (let i = 0; i < ordersToUpdate.length; i += batchSize) {
+          const slice = ordersToUpdate.slice(i, i + batchSize);
+          await safeFirestoreWrite(async () => {
+            const batch = writeBatch(db);
+            for (const item of slice) {
+              batch.update(doc(db, 'orders', item.id), item.updates);
+            }
+            await batch.commit();
+          }, 'applyOfficialCommuneNames');
+        }
+      }
+
+      if (hasLearned) {
+        await get().updateSettings({ cityCorrections: newCorrections });
+      }
+
+      return { updatedCount: ordersToUpdate.length };
+    } catch (err) {
+      console.error("applyOfficialCommuneNamesToExistingOrders error:", err);
+      return { updatedCount: 0 };
+    }
+  },
+
   addOrder: async (order) => {
     try {
       const state = get();
@@ -671,14 +792,42 @@ export const useStore = create<AppState>()((set, get) => ({
         return;
       }
       
-      // Auto-correct city/commune names based on past manual corrections
-      if (settings?.cityCorrections) {
-        if (order.city && settings.cityCorrections[order.city.trim()]) {
-          order.city = settings.cityCorrections[order.city.trim()];
+      // Auto-adopt official shipping commune name (EcoTrack) and record clean match permanently
+      const wilayaId = extractWilayaCode(order);
+      const companyMappings = (order.deliveryCompany && settings?.communeMappings?.[order.deliveryCompany]) || 
+                              settings?.communeMappings?.['default'] || 
+                              {};
+      const corrections = settings?.cityCorrections || {};
+
+      let hasNewLearnedCorrection = false;
+      const updatedCorrections = { ...corrections };
+
+      if (order.city) {
+        const rawCity = String(order.city).trim();
+        const resolved = resolveEcoTrackCommune(rawCity, wilayaId, companyMappings, corrections);
+        if (resolved.isResolved && resolved.finalNom) {
+          order.city = resolved.finalNom;
+          if (rawCity !== resolved.finalNom && !updatedCorrections[rawCity]) {
+            updatedCorrections[rawCity] = resolved.finalNom;
+            hasNewLearnedCorrection = true;
+          }
         }
-        if (order.stopdeskCommune && settings.cityCorrections[order.stopdeskCommune.trim()]) {
-          order.stopdeskCommune = settings.cityCorrections[order.stopdeskCommune.trim()];
+      }
+
+      if (order.stopdeskCommune) {
+        const rawDesk = String(order.stopdeskCommune).trim();
+        const resolvedDesk = resolveEcoTrackCommune(rawDesk, wilayaId, companyMappings, corrections);
+        if (resolvedDesk.isResolved && resolvedDesk.finalNom) {
+          order.stopdeskCommune = resolvedDesk.finalNom;
+          if (rawDesk !== resolvedDesk.finalNom && !updatedCorrections[rawDesk]) {
+            updatedCorrections[rawDesk] = resolvedDesk.finalNom;
+            hasNewLearnedCorrection = true;
+          }
         }
+      }
+
+      if (hasNewLearnedCorrection) {
+        get().updateSettings({ cityCorrections: updatedCorrections });
       }
       
       const invProducts = state.inventoryProducts;
@@ -857,16 +1006,17 @@ export const useStore = create<AppState>()((set, get) => ({
         }
       }
 
-      // If product details or quantity were updated, strictly synchronize items array
+      // If product details, sku, quantity, or price were updated, strictly synchronize items array
       // so shipping dispatch, picking list, and reports stay 100% in sync with the new product and quantity!
       const hasProductOrQtyUpdate =
         ('productName' in updates && updates.productName !== existingOrder.productName) ||
         ('variation' in updates && updates.variation !== existingOrder.variation) ||
         ('sku' in updates && updates.sku !== existingOrder.sku) ||
-        ('qnts' in updates && updates.qnts !== existingOrder.qnts);
+        ('qnts' in updates && updates.qnts !== existingOrder.qnts) ||
+        ('priceWithoutDelivery' in updates && updates.priceWithoutDelivery !== existingOrder.priceWithoutDelivery);
 
-      const hasExplicitItems = 'items' in updates && updates.items !== undefined && updates.items !== null;
-      if (hasProductOrQtyUpdate && !hasExplicitItems) {
+      const hasExplicitItems = 'items' in updates && updates.items !== undefined && updates.items !== null && Array.isArray(updates.items) && updates.items.length > 1;
+      if (hasProductOrQtyUpdate || !hasExplicitItems) {
         const mergedForSync = { ...existingOrder, ...updates };
         const synced = syncOrderItems(mergedForSync, get().inventoryProducts);
         updates.items = synced.items;
@@ -2353,6 +2503,15 @@ export const useStore = create<AppState>()((set, get) => ({
   
   bulkUpsertShippingBureaus: async (bureaus) => {
     try {
+      set((state) => {
+        const bureauMap = new Map(state.shippingBureaus.map(b => [b.id, b]));
+        bureaus.forEach(b => {
+          const clean = JSON.parse(JSON.stringify(b));
+          const existing = bureauMap.get(clean.id);
+          bureauMap.set(clean.id, existing ? { ...existing, ...clean } : clean);
+        });
+        return { shippingBureaus: Array.from(bureauMap.values()) };
+      });
       const batch = writeBatch(db);
       for (const bureau of bureaus) {
         const docRef = doc(db, 'shippingBureaus', bureau.id);
@@ -2361,6 +2520,31 @@ export const useStore = create<AppState>()((set, get) => ({
       await safeFirestoreWrite(() => batch.commit(), 'bulkUpsertShippingBureaus');
     } catch (error) {
       console.error("Error bulk upserting shipping bureaus", error);
+      throw error;
+    }
+  },
+
+  replaceAllShippingBureaus: async (newBureaus) => {
+    try {
+      const currentBureaus = get().shippingBureaus;
+      const cleanList = JSON.parse(JSON.stringify(newBureaus));
+      set({ shippingBureaus: cleanList });
+
+      const batch = writeBatch(db);
+      // Delete old bureaus that are not in the new list
+      const newIds = new Set(newBureaus.map(b => b.id));
+      for (const oldB of currentBureaus) {
+        if (!newIds.has(oldB.id)) {
+          batch.delete(doc(db, 'shippingBureaus', oldB.id));
+        }
+      }
+      // Set all incoming bureaus
+      for (const b of cleanList) {
+        batch.set(doc(db, 'shippingBureaus', b.id), b);
+      }
+      await safeFirestoreWrite(() => batch.commit(), 'replaceAllShippingBureaus');
+    } catch (error) {
+      console.error("Error replacing shipping bureaus:", error);
       throw error;
     }
   },

@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const ShippingDeskInfo: React.FC<Props> = ({ wilayaName, communeName, deliveryCompany, isStopDesk }) => {
-  const { shippingDesks, fetchShippingDesks } = useStore();
+  const { shippingDesks, fetchShippingDesks, shippingBureaus } = useStore();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -26,8 +26,8 @@ export const ShippingDeskInfo: React.FC<Props> = ({ wilayaName, communeName, del
 
   const desks = shippingDesks[deliveryCompany] || [];
   
-  // Find desk in this commune
-  const communeDesk = desks.find(d => {
+  // 1. Find desk in this commune from API desks
+  let communeDesk = desks.find(d => {
     if (d.location && d.location.commune) {
       return d.location.commune.toLowerCase().includes(communeName.toLowerCase()) || communeName.toLowerCase().includes(d.location.commune.toLowerCase());
     }
@@ -36,6 +36,32 @@ export const ShippingDeskInfo: React.FC<Props> = ({ wilayaName, communeName, del
     }
     return false;
   });
+
+  // 2. Fallback to manually added bureaus from shippingBureaus
+  if (!communeDesk && shippingBureaus && shippingBureaus.length > 0) {
+    const foundBureau = shippingBureaus.find(b => {
+      const matchCompany = !b.companyName || b.companyName === deliveryCompany || deliveryCompany.includes('DHD') || deliveryCompany.includes('Expedi');
+      const matchWilaya = (b.wilayaName && wilayaName && (b.wilayaName.toLowerCase().includes(wilayaName.toLowerCase()) || wilayaName.toLowerCase().includes(b.wilayaName.toLowerCase()))) ||
+                          (b.wilayaCode && wilayaName && wilayaName.includes(b.wilayaCode));
+      const matchCommune = b.communeName ? (b.communeName.toLowerCase().includes(communeName.toLowerCase()) || communeName.toLowerCase().includes(b.communeName.toLowerCase())) : true;
+      return matchCompany && matchWilaya && matchCommune;
+    });
+
+    if (foundBureau) {
+      communeDesk = {
+        name: foundBureau.deskName || `مكتب ${foundBureau.communeName || foundBureau.wilayaName}`,
+        adresse: foundBureau.address,
+        phone: foundBureau.phones?.split('\n')[0] || foundBureau.phones,
+        phone2: foundBureau.phones?.split('\n')[1] || '',
+        location: {
+          name: foundBureau.deskName || `مكتب ${foundBureau.communeName || foundBureau.wilayaName}`,
+          adresse: foundBureau.address,
+          phone: foundBureau.phones,
+          commune: foundBureau.communeName || communeName
+        }
+      };
+    }
+  }
 
   if (loading) {
     return <div className="text-xs text-gray-400 mt-2">جاري فحص توفر المكتب...</div>;

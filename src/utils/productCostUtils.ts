@@ -1,4 +1,4 @@
-import { InventoryProduct, Order, SystemSettings } from '../types';
+import { InventoryProduct, ProductVariation, Order, SystemSettings } from '../types';
 
 /**
  * Normalizes text for robust Arabic and multi-language comparison.
@@ -1806,9 +1806,137 @@ export const getOrderUnitAndTotalCost = (
   };
 };
 
+export interface SkuLookupResult {
+  found: boolean;
+  product?: InventoryProduct;
+  variation?: ProductVariation | null;
+  sku?: string;
+  productName?: string;
+  variationName?: string;
+  price?: number;
+  cost?: number;
+  weight?: number;
+  shippingAlias?: string;
+}
+
+/**
+ * Searches inventory for an exact or matching SKU across products and variations.
+ * Returns authoritative product name, variation name, selling price, cost, weight, and shipping alias.
+ */
+export function lookupInventoryBySku(
+  rawSku: string | undefined | null,
+  inventoryProducts: InventoryProduct[] = []
+): SkuLookupResult {
+  if (!rawSku || !Array.isArray(inventoryProducts) || inventoryProducts.length === 0) {
+    return { found: false };
+  }
+
+  const sNorm = String(rawSku).trim().toLowerCase();
+  const sClean = cleanSku(rawSku);
+  if (!sNorm && !sClean) return { found: false };
+
+  // 1. Search variations first (Variation SKU is the most specific model identifier)
+  for (const p of inventoryProducts) {
+    if (Array.isArray(p.variations) && p.variations.length > 0) {
+      for (const v of p.variations) {
+        const vSku = (v.sku || '').trim().toLowerCase();
+        const vLocalSku = (v.local_sku || '').trim().toLowerCase();
+        const vClean = cleanSku(v.sku || v.local_sku);
+
+        const isExactMatch =
+          (vSku && (vSku === sNorm || vSku === sClean)) ||
+          (vLocalSku && (vLocalSku === sNorm || vLocalSku === sClean)) ||
+          (vClean && (vClean === sClean || vClean === sNorm));
+
+        if (isExactMatch) {
+          const varPrice = Number(v.local_price || v.sale_price || v.price || v.regular_price || p.local_price || p.sale_price || p.price || p.regular_price || 0);
+          const varCost = Number(v.local_cost ?? v.cost ?? v.purchase_price ?? p.local_cost ?? p.cost ?? p.purchase_price ?? 0);
+          const varWeight = Number(v.weight ?? p.weight ?? 0);
+          const varName = v.name || v.attributes?.map((a: any) => a.option || a.value).join(' - ') || '';
+          const varAlias = (v.shippingAliasName || '').trim() || (p.shippingAliasName && p.useShippingAlias !== false ? p.shippingAliasName.trim() : '');
+
+          return {
+            found: true,
+            product: p,
+            variation: v,
+            sku: v.sku || v.local_sku || rawSku,
+            productName: p.name,
+            variationName: varName,
+            price: varPrice,
+            cost: varCost,
+            weight: varWeight,
+            shippingAlias: varAlias
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Search parent/simple products
+  for (const p of inventoryProducts) {
+    const pSku = (p.sku || '').trim().toLowerCase();
+    const pClean = cleanSku(p.sku);
+
+    const isExactMatch =
+      (pSku && (pSku === sNorm || pSku === sClean)) ||
+      (pClean && (pClean === sClean || pClean === sNorm));
+
+    if (isExactMatch) {
+      const prodPrice = Number(p.local_price || p.sale_price || p.price || p.regular_price || 0);
+      const prodCost = Number(p.local_cost ?? p.cost ?? p.purchase_price ?? 0);
+      const prodWeight = Number(p.weight ?? 0);
+      const prodAlias = p.shippingAliasName && p.useShippingAlias !== false ? p.shippingAliasName.trim() : '';
+
+      return {
+        found: true,
+        product: p,
+        variation: null,
+        sku: p.sku || rawSku,
+        productName: p.name,
+        variationName: '',
+        price: prodPrice,
+        cost: prodCost,
+        weight: prodWeight,
+        shippingAlias: prodAlias
+      };
+    }
+  }
+
+  // 3. Fallback: Suffix/prefix match (e.g., M10-BLK with parent SKU M10 or variation BLK)
+  for (const p of inventoryProducts) {
+    if (Array.isArray(p.variations) && p.variations.length > 0) {
+      for (const v of p.variations) {
+        const vSku = (v.sku || '').trim().toLowerCase();
+        if (vSku && (sNorm.endsWith(`-${vSku}`) || sNorm.endsWith(`_${vSku}`) || sNorm.startsWith(`${vSku}-`))) {
+          const varPrice = Number(v.local_price || v.sale_price || v.price || v.regular_price || p.local_price || p.sale_price || p.price || p.regular_price || 0);
+          const varCost = Number(v.local_cost ?? v.cost ?? v.purchase_price ?? p.local_cost ?? p.cost ?? p.purchase_price ?? 0);
+          const varWeight = Number(v.weight ?? p.weight ?? 0);
+          const varName = v.name || v.attributes?.map((a: any) => a.option || a.value).join(' - ') || '';
+          const varAlias = (v.shippingAliasName || '').trim() || (p.shippingAliasName && p.useShippingAlias !== false ? p.shippingAliasName.trim() : '');
+
+          return {
+            found: true,
+            product: p,
+            variation: v,
+            sku: v.sku || v.local_sku || rawSku,
+            productName: p.name,
+            variationName: varName,
+            price: varPrice,
+            cost: varCost,
+            weight: varWeight,
+            shippingAlias: varAlias
+          };
+        }
+      }
+    }
+  }
+
+  return { found: false };
+}
+
 /**
  * Resolves product and variation names according to user's alias hierarchy:
- * 1. If variation-specific shipping alias is written (الاسم المستعار المدون للنوع): use it.
+ * 1. If variation-specific shipping alias is written (الاسم المستعار المدون للنوع): use it directly.
  * 2. Else if general product alias exists (الاسم العام مع زيادة النوع): use general product alias + variation name.
  * 3. Else (إذا تركت فارغة): use original product name + original variation name.
  */
@@ -1823,16 +1951,19 @@ export const resolveShippingDisplayNames = (
   const rawOrderProd = (order.productName || '').trim();
   const rawOrderProdNorm = normalizeText(rawOrderProd);
 
-  // Verification: If order has an explicit productName, ensure matchedProd actually corresponds to it!
-  // If matchedProd's name does NOT match rawOrderProd, the SKU might be stale/leftover from a previous product.
-  if (rawOrderProdNorm && matchedProd) {
+  // If match was made by SKU, SKU matching is strictly authoritative!
+  // ONLY if match was NOT by SKU (e.g. fuzzy/fallback match) do we verify product name:
+  const isSkuMatched = match.matchType === 'variation_sku' || match.matchType === 'product_sku';
+  if (!isSkuMatched && rawOrderProdNorm && matchedProd) {
     const prodNameNorm = normalizeText(matchedProd.name);
+    const prodAliasNorm = normalizeText(matchedProd.shippingAliasName || '');
     const isMatching = prodNameNorm === rawOrderProdNorm ||
                        prodNameNorm.includes(rawOrderProdNorm) ||
-                       rawOrderProdNorm.includes(prodNameNorm);
+                       rawOrderProdNorm.includes(prodNameNorm) ||
+                       prodAliasNorm === rawOrderProdNorm ||
+                       (prodAliasNorm && (prodAliasNorm.includes(rawOrderProdNorm) || rawOrderProdNorm.includes(prodAliasNorm)));
     if (!isMatching) {
-      // The SKU matched a different product than the current order productName.
-      // Search for the true inventory product matching order.productName by name:
+      // The SKU wasn't used or matched a different product; search by name
       const nameMatch = (inventoryProducts || []).find(p => {
         if (!p.name) return false;
         const pNorm = normalizeText(p.name);
@@ -1843,30 +1974,23 @@ export const resolveShippingDisplayNames = (
         matchedVar = matchVariationWithinProduct(
           nameMatch.variations || [],
           order.variation || '',
-          [order.sku].filter(Boolean)
+          [order.sku].filter(Boolean) as string[]
         );
       } else {
-        // No inventory product matches this new product name; clear matchedProd so we do NOT apply another product's alias!
         matchedProd = null;
         matchedVar = null;
       }
     }
   }
 
-  // Extra safety: If product has variations, ensure variation is accurately matched to order's requested variation or product title
-  if (matchedProd && Array.isArray(matchedProd.variations) && matchedProd.variations.length > 0) {
+  // Extra safety: If product has variations and no variation was matched yet, match within product
+  if (matchedProd && Array.isArray(matchedProd.variations) && matchedProd.variations.length > 0 && !matchedVar) {
     const rawVar = (order.variation || '').trim();
     const rawProd = (order.productName || '').trim();
     if (rawVar) {
-      const explicitVar = matchVariationWithinProduct(matchedProd.variations, rawVar);
-      if (explicitVar) {
-        matchedVar = explicitVar;
-      }
+      matchedVar = matchVariationWithinProduct(matchedProd.variations, rawVar, [order.sku].filter(Boolean) as string[]);
     } else if (rawProd) {
-      const explicitVar = matchVariationWithinProduct(matchedProd.variations, rawProd);
-      if (explicitVar) {
-        matchedVar = explicitVar;
-      }
+      matchedVar = matchVariationWithinProduct(matchedProd.variations, rawProd, [order.sku].filter(Boolean) as string[]);
     }
   }
 
@@ -1891,13 +2015,9 @@ export const resolveShippingDisplayNames = (
         finalVarName = varAlias;
       }
     } else {
-      if (originalProdName && !varAlias.toLowerCase().includes(originalProdName.toLowerCase()) && varAlias.length < 25) {
-        finalProdName = originalProdName;
-        finalVarName = varAlias;
-      } else {
-        finalProdName = varAlias;
-        finalVarName = '';
-      }
+      // Variation alias exists, no product alias: send variation alias directly
+      finalProdName = varAlias;
+      finalVarName = '';
     }
   }
   // Case 2: Variation alias left empty, but general product alias exists ("الاسم العام مع زيادة النوع")

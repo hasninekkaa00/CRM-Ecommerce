@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useStore } from '../../store';
 import { 
   Plus, Trash2, Check, X, Building, Link2, Truck, Edit, Star, 
-  RotateCcw, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Store
+  RotateCcw, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Store, MapPin
 } from 'lucide-react';
 import { ShippingIntegration } from '../../types';
 import toast from 'react-hot-toast';
+import { CommuneMappingTab } from './CommuneMappingTab';
 
 const DEFAULT_ALGERIA_COMPANIES = [
   'ياليدين',
@@ -22,7 +23,7 @@ export function ShippingManager() {
   const Integrations = settings?.shippingIntegrations || [];
   const manualCompanies = Array.isArray(settings?.deliveryCompanies) ? settings.deliveryCompanies : DEFAULT_ALGERIA_COMPANIES;
   
-  const [activeTab, setActiveTab] = useState<'delivery_companies' | 'api_integrations'>('delivery_companies');
+  const [activeTab, setActiveTab] = useState<'delivery_companies' | 'api_integrations' | 'commune_mapping'>('delivery_companies');
   
   // API Integration form states
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -284,6 +285,18 @@ export function ShippingManager() {
           >
             <Link2 className="w-3.5 h-3.5" />
             <span>الربط التلقائي API ({Integrations.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('commune_mapping')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'commune_mapping'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>مطابقة بلديات الشحن (WooCommerce ↔ EcoTrack)</span>
           </button>
         </div>
       </div>
@@ -676,6 +689,11 @@ export function ShippingManager() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Tab 3: Commune Mapping (WooCommerce ↔ EcoTrack) */}
+      {activeTab === 'commune_mapping' && (
+        <CommuneMappingTab />
       )}
 
       {/* Confirmation Modal: Delete Manual Delivery Company */}

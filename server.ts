@@ -361,9 +361,22 @@ async function startServer() {
       const orders = parsedData;
 
       const mappedOrders = orders.map((orderData: any) => {
-        let rawCity = orderData.billing?.city || orderData.shipping?.city || '';
+        let rawCity = (orderData.billing?.city || orderData.shipping?.city || '').trim();
         if (rawCity.toLowerCase().includes('ain azal') || rawCity.includes('عين ازال') || rawCity.includes('عين أزال')) {
-            rawCity = 'Ain Azel';
+          rawCity = 'Ain Azel';
+        } else if (rawCity && ecotrackCommunes && ecotrackCommunes.length > 0) {
+          let norm = rawCity.replace(/\s+/g, ' ');
+          if (/^o\s+/i.test(norm)) norm = norm.replace(/^o\s+/i, 'Ouled ');
+          else if (/^b\s+/i.test(norm)) norm = norm.replace(/^b\s+/i, 'Bordj ');
+          else if (/^m['\s]+/i.test(norm)) norm = norm.replace(/^m['\s]+/i, "M' ");
+
+          const match = ecotrackCommunes.find((c: any) => 
+            c.nom.toLowerCase() === norm.toLowerCase() ||
+            c.nom.toLowerCase() === rawCity.toLowerCase()
+          );
+          if (match) {
+            rawCity = match.nom;
+          }
         }
         return {
           id: String(orderData.id),
@@ -582,7 +595,7 @@ async function startServer() {
 
   app.post("/api/shipping/ecotrack/create", async (req, res) => {
     try {
-      const { domain, token, order } = req.body;
+      const { domain, token, order, communeMappings, cityCorrections } = req.body;
       
       if (!domain || !token || !order) {
         return res.status(400).json({ success: false, message: "Missing credentials or order data" });
@@ -725,19 +738,34 @@ async function startServer() {
           let communeToCheck = String(order.stopdeskCommune || order.city || '').trim();
           
           if (communeToCheck) {
-            if (communeToCheck.toLowerCase().includes('ain azal') || communeToCheck.includes('عين ازال') || communeToCheck.includes('عين أزال')) {
+            // 0. Check custom user communeMappings & cityCorrections (100% authoritative override)
+            const customTarget = (communeMappings && (communeMappings[communeToCheck] || (order.city && communeMappings[order.city]) || (order.stopdeskCommune && communeMappings[order.stopdeskCommune]))) ||
+                                 (cityCorrections && (cityCorrections[communeToCheck] || (order.city && cityCorrections[order.city]) || (order.stopdeskCommune && cityCorrections[order.stopdeskCommune])));
+
+            if (customTarget) {
+              const targetStr = String(customTarget).trim();
+              matchingCity = wilayaCommunes.find((c: any) => c.nom.toLowerCase() === targetStr.toLowerCase()) ||
+                             (ecotrackCommunes && ecotrackCommunes.find((c: any) => c.nom.toLowerCase() === targetStr.toLowerCase()));
+              if (!matchingCity) {
+                matchingCity = { nom: targetStr, wilaya_id: parsedWilaya, has_stop_desk: isStopDesk ? 1 : 0 };
+              }
+            }
+
+            if (!matchingCity && (communeToCheck.toLowerCase().includes('ain azal') || communeToCheck.includes('عين ازال') || communeToCheck.includes('عين أزال'))) {
                 communeToCheck = 'Ain Azel';
             }
 
             // 1. Check Arabic-to-French dictionary
-            for (const [arKey, frVal] of Object.entries(arabicToFrenchCommunes)) {
-              if (communeToCheck.includes(arKey) || arKey.includes(communeToCheck)) {
-                matchingCity = wilayaCommunes.find((c: any) => 
-                  c.nom.toLowerCase() === frVal.toLowerCase() ||
-                  c.nom.toLowerCase().includes(frVal.toLowerCase()) ||
-                  frVal.toLowerCase().includes(c.nom.toLowerCase())
-                );
-                if (matchingCity) break;
+            if (!matchingCity) {
+              for (const [arKey, frVal] of Object.entries(arabicToFrenchCommunes)) {
+                if (communeToCheck.includes(arKey) || arKey.includes(communeToCheck)) {
+                  matchingCity = wilayaCommunes.find((c: any) => 
+                    c.nom.toLowerCase() === frVal.toLowerCase() ||
+                    c.nom.toLowerCase().includes(frVal.toLowerCase()) ||
+                    frVal.toLowerCase().includes(c.nom.toLowerCase())
+                  );
+                  if (matchingCity) break;
+                }
               }
             }
 
@@ -763,6 +791,21 @@ async function startServer() {
                 matchingCity = wilayaCommunes.find((c: any) => {
                    const cleanNom = c.nom.toLowerCase().replace(/[^a-z0-9]/gi, '');
                    return cleanNom === cityStr || cleanNom.includes(cityStr) || cityStr.includes(cleanNom);
+                });
+              }
+            }
+
+            // 5. Intelligent Algerian abbreviation expansion (e.g. O -> Ouled, B -> Bordj)
+            if (!matchingCity) {
+              const expanded = communeToCheck
+                .replace(/^o\s+/i, 'Ouled ')
+                .replace(/^b\s+/i, 'Bordj ')
+                .replace(/^s\s+/i, 'Sidi ');
+              if (expanded !== communeToCheck) {
+                const expClean = expanded.toLowerCase().replace(/[^a-z0-9]/gi, '');
+                matchingCity = wilayaCommunes.find((c: any) => {
+                  const cleanNom = c.nom.toLowerCase().replace(/[^a-z0-9]/gi, '');
+                  return cleanNom === expClean || cleanNom.includes(expClean) || expClean.includes(cleanNom);
                 });
               }
             }
@@ -1119,6 +1162,77 @@ async function startServer() {
     } catch (error: any) {
       console.error("Shipping API Remarks Error:", error);
       res.status(200).json({ success: false, message: error.message || "Internal server error", data: [] });
+    }
+  });
+
+  app.post("/api/shipping/ecotrack/communes", async (req, res) => {
+    try {
+      const { domain, token, wilaya_id } = req.body;
+      let wId = wilaya_id ? parseInt(String(wilaya_id), 10) : 0;
+
+      // 1. If domain and token are provided, attempt fetching directly from company's EcoTrack API
+      if (domain && token) {
+        let baseUrl = domain.replace(/\/+$/, '');
+        if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+          baseUrl = 'https://' + baseUrl;
+        }
+        let url = `${baseUrl}/api/v1/get/communes${wId > 0 ? `?wilaya_id=${wId}` : ''}`;
+        
+        try {
+          const resp = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          });
+
+          if (resp.ok) {
+            const dataText = await resp.text();
+            let data: any;
+            try { data = JSON.parse(dataText); } catch(e) { data = null; }
+            
+            let list: any[] = [];
+            if (Array.isArray(data)) {
+              list = data;
+            } else if (data && Array.isArray(data.communes)) {
+              list = data.communes;
+            } else if (data && Array.isArray(data.data)) {
+              list = data.data;
+            } else if (data && typeof data === 'object') {
+              list = Object.values(data).filter(v => v && typeof v === 'object' && (v as any).nom);
+            }
+
+            if (list.length > 0) {
+              return res.json({ 
+                success: true, 
+                source: 'live_api', 
+                count: list.length, 
+                data: list 
+              });
+            }
+          }
+        } catch (apiErr) {
+          console.warn("EcoTrack live API fetch failed, falling back to local database:", apiErr);
+        }
+      }
+
+      // 2. Fallback to local ecotrackCommunes database
+      let filtered = ecotrackCommunes || [];
+      if (wId > 0) {
+        filtered = filtered.filter((c: any) => c.wilaya_id === wId);
+      }
+
+      return res.json({
+        success: true,
+        source: 'local_database',
+        count: filtered.length,
+        data: filtered
+      });
+    } catch (error: any) {
+      console.error("Shipping API Communes Error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Internal server error" });
     }
   });
 

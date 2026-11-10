@@ -43,7 +43,7 @@ export const ALL_SECTIONS: SectionItem[] = [
   { id: 'confirmers', title: 'إدارة المؤكدين والتكليف', category: 'team', icon: Headphones, iconBg: 'bg-purple-100 text-purple-600', shortDesc: 'توزيع وتتبع مهام التأكيد' },
   { id: 'suivi', title: 'داشبورد سويفي', category: 'overview', icon: Navigation, iconBg: 'bg-cyan-100 text-cyan-600', shortDesc: 'لوحة متابعة مخصصة' },
   { id: 'abandoned', title: 'السلات المتروكة', category: 'sales', icon: Ghost, iconBg: 'bg-orange-100 text-orange-600', shortDesc: 'استرجاع الطلبات غير المكتملة' },
-  { id: 'shipping', title: 'شركات التوصيل والشحن', category: 'shipping', icon: Truck, iconBg: 'bg-teal-100 text-teal-600', shortDesc: 'إدارة حسابات وشركات التوصيل والشحن المباشرة والتلقائية' },
+  { id: 'shipping', title: 'شركات التوصيل والشحن', category: 'shipping', icon: Truck, iconBg: 'bg-teal-100 text-teal-600', shortDesc: 'إدارة حسابات شركات التوصيل والربط ومطابقة بلديات الشحن' },
   { id: 'shipping_invoices', title: 'فواتير التوصيل', category: 'shipping', icon: Receipt, iconBg: 'bg-blue-100 text-blue-600', shortDesc: 'متابعة مستحقات شركات الشحن' },
   { id: 'shipping_bureaus', title: 'مكاتب شركة الشحن', category: 'shipping', icon: Building, iconBg: 'bg-slate-100 text-slate-600', shortDesc: 'فروع ومكاتب الشحن' },
   { id: 'campaigns', title: 'الحملات الإعلانية', category: 'marketing', icon: Megaphone, iconBg: 'bg-fuchsia-100 text-fuchsia-600', shortDesc: 'متابعة أداء الإعلانات' },

@@ -233,6 +233,7 @@ export interface SystemSettings {
   notificationStatuses?: string[];
   soundNotificationEnabled?: boolean;
   cityCorrections?: Record<string, string>;
+  communeMappings?: Record<string, Record<string, string>>; // companyId or 'default' -> { [wpCommuneName]: ecotrackCommuneName }
   visualNotificationEnabled?: boolean;
   
   lowInventoryAlertEnabled?: boolean;
@@ -265,6 +266,7 @@ export interface SystemSettings {
   autoBackupIntervalHours?: number;
   lastAutoBackupTimestamp?: string;
   autoBackupIncludeDesign?: boolean;
+  savedOrderViews?: any[];
 }
 
 export interface OrderTag {
@@ -415,8 +417,14 @@ export interface ShippingBureau {
   id: string;
   wilayaCode: string;
   wilayaName: string;
+  communeName?: string;
+  deskName?: string;
+  companyName?: string;
+  hasStopDesk?: boolean;
   address: string;
   phones: string;
+  source?: 'api' | 'manual';
+  updatedAt?: string;
 }
 
 export type UserRole = 'admin' | 'confirmer';

@@ -1,5 +1,5 @@
 import { Order, InventoryProduct } from '../types';
-import { normalizeText, resolveShippingDisplayNames, findInventoryProductAndVariation, matchVariationWithinProduct } from './productCostUtils';
+import { normalizeText, resolveShippingDisplayNames, findInventoryProductAndVariation, matchVariationWithinProduct, lookupInventoryBySku } from './productCostUtils';
 import { calculateOrderShippingWeight } from './weightUtils';
 
 /**
@@ -8,7 +8,8 @@ import { calculateOrderShippingWeight } from './weightUtils';
  * 1. Single-product orders always have items[0] strictly reflecting the current product, variation, sku, and quantity.
  * 2. Multi-product orders with '+' in productName or multiple items retain their exact components.
  * 3. Stale arrays (line_items, products, cart, orderedItems) are synced to match.
- * 4. Parcel weight is recalculated.
+ * 4. Prices and weights are resolved from inventory based on authoritative SKU matching.
+ * 5. Parcel weight is recalculated.
  */
 export function syncOrderItems<T extends Record<string, any>>(
   order: T,
@@ -41,18 +42,33 @@ export function syncOrderItems<T extends Record<string, any>>(
     finalItems = pNames.map((pn, idx) => {
       const existingItem = Array.isArray(rawItems) ? rawItems[idx] : null;
       const itQty = existingItem ? (Number(existingItem.quantity ?? existingItem.qnts) || 1) : 1;
+      const itSku = skus[idx] || (existingItem?.sku || '');
+
+      let itPrice = existingItem?.price ?? 0;
+      let itCost = existingItem?.cost;
+      let itWeight = existingItem?.weight;
+
+      if (itSku && inventoryProducts && inventoryProducts.length > 0) {
+        const invLookup = lookupInventoryBySku(itSku, inventoryProducts);
+        if (invLookup.found) {
+          if (!itPrice || itPrice === 0) itPrice = invLookup.price || 0;
+          if (!itCost || itCost === 0) itCost = invLookup.cost || 0;
+          if (!itWeight || itWeight === 0) itWeight = invLookup.weight || 0;
+        }
+      }
+
       return {
         id: existingItem?.id || `item-${Date.now()}-${idx}`,
         productName: pn,
         name: pn,
         variation: vNames[idx] || (existingItem?.variation || ''),
         variationName: vNames[idx] || (existingItem?.variationName || ''),
-        sku: skus[idx] || (existingItem?.sku || ''),
+        sku: itSku,
         qnts: itQty,
         quantity: itQty,
-        price: existingItem?.price ?? 0,
-        cost: existingItem?.cost,
-        weight: existingItem?.weight
+        price: itPrice,
+        cost: itCost,
+        weight: itWeight
       };
     });
   }
@@ -61,6 +77,21 @@ export function syncOrderItems<T extends Record<string, any>>(
   else if (Array.isArray(rawItems) && rawItems.length > 1 && (!prodName || rawItems.some(it => (it.name || it.productName) === prodName))) {
     finalItems = rawItems.map(it => {
       const itQty = Number(it.quantity ?? it.qnts ?? 1) || 1;
+      const itSku = (it.sku || '').trim();
+
+      let itPrice = it.price ?? 0;
+      let itCost = it.cost;
+      let itWeight = it.weight;
+
+      if (itSku && inventoryProducts && inventoryProducts.length > 0) {
+        const invLookup = lookupInventoryBySku(itSku, inventoryProducts);
+        if (invLookup.found) {
+          if (!itPrice || itPrice === 0) itPrice = invLookup.price || 0;
+          if (!itCost || itCost === 0) itCost = invLookup.cost || 0;
+          if (!itWeight || itWeight === 0) itWeight = invLookup.weight || 0;
+        }
+      }
+
       return {
         ...it,
         id: it.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -68,18 +99,43 @@ export function syncOrderItems<T extends Record<string, any>>(
         name: (it.name || it.productName || '').trim(),
         variation: (it.variation || it.variationName || '').trim(),
         variationName: (it.variationName || it.variation || '').trim(),
-        sku: (it.sku || '').trim(),
+        sku: itSku,
         qnts: itQty,
-        quantity: itQty
+        quantity: itQty,
+        price: itPrice,
+        cost: itCost,
+        weight: itWeight
       };
     });
   }
   // Case 3: Single product order (or order converted to single product)
   else {
     const existingFirst = Array.isArray(rawItems) && rawItems.length > 0 ? rawItems[0] : null;
-    const finalName = prodName || existingFirst?.name || existingFirst?.productName || 'منتج';
-    const finalVar = variation !== undefined && variation !== '' ? variation : (existingFirst?.variation || existingFirst?.variationName || '');
-    const finalSku = sku || existingFirst?.sku || '';
+    let finalName = prodName || existingFirst?.name || existingFirst?.productName || 'منتج';
+    let finalVar = variation !== undefined && variation !== '' ? variation : (existingFirst?.variation || existingFirst?.variationName || '');
+    let finalSku = sku || existingFirst?.sku || '';
+
+    let itemPrice = existingFirst?.price ?? (order.priceWithoutDelivery ? Number(order.priceWithoutDelivery) / (qnts || 1) : 0);
+    let itemCost = existingFirst?.cost;
+    let itemWeight = existingFirst?.weight ?? order.weight;
+
+    // Look up price, cost, and attributes from inventory by SKU
+    if (finalSku && inventoryProducts && inventoryProducts.length > 0) {
+      const invLookup = lookupInventoryBySku(finalSku, inventoryProducts);
+      if (invLookup.found) {
+        if (!finalName || finalName === 'منتج') finalName = invLookup.productName || finalName;
+        if (!finalVar) finalVar = invLookup.variationName || finalVar;
+        if (invLookup.price && (!itemPrice || itemPrice === 0)) {
+          itemPrice = invLookup.price;
+        }
+        if (invLookup.cost && (!itemCost || itemCost === 0)) {
+          itemCost = invLookup.cost;
+        }
+        if (invLookup.weight && (!itemWeight || itemWeight === 0)) {
+          itemWeight = invLookup.weight;
+        }
+      }
+    }
 
     finalItems = [{
       id: existingFirst?.id || `item-${Date.now()}`,
@@ -90,10 +146,16 @@ export function syncOrderItems<T extends Record<string, any>>(
       sku: finalSku,
       qnts: qnts,
       quantity: qnts,
-      price: existingFirst?.price ?? (order.priceWithoutDelivery ? Number(order.priceWithoutDelivery) / (qnts || 1) : 0),
-      cost: existingFirst?.cost,
-      weight: existingFirst?.weight ?? order.weight
+      price: itemPrice,
+      cost: itemCost,
+      weight: itemWeight
     }];
+
+    // If order price without delivery was 0/empty, populate from matched SKU inventory price
+    if ((order.priceWithoutDelivery === undefined || order.priceWithoutDelivery === null || Number(order.priceWithoutDelivery) === 0) && itemPrice > 0) {
+      (order as any).priceWithoutDelivery = itemPrice * qnts;
+      (order as any).totalCharge = Number((order as any).priceWithoutDelivery) + Number(order.deliveryPrice || 0);
+    }
   }
 
   // Recalculate parcel shipping weight for the synchronized order

@@ -5,10 +5,6 @@ import { useStore } from '../../store';
 
 interface QuickReclassifyModalProps {
   order: any;
-  
-  
-  
-  1?: number;
   onClose: () => void;
   onSuccess?: () => void;
 }

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Order, InventoryProduct } from '../../types';
 import { useStore } from '../../store';
 import { calculateOrderShippingWeight, formatWeightArabic } from '../../utils/weightUtils';
-import { getProductCostValue } from '../../utils/productCostUtils';
+import { getProductCostValue, lookupInventoryBySku } from '../../utils/productCostUtils';
 import { playActionSound } from '../../utils/audioUtils';
 
 interface EditOrderItemsModalProps {
@@ -166,7 +166,19 @@ export function EditOrderItemsModal({ isOpen, onClose, order, onSaved }: EditOrd
   const handleUpdateItemField = (id: string, field: keyof EditableItem, value: any) => {
     setItems(prev => prev.map(it => {
       if (it.id !== id) return it;
-      return { ...it, [field]: value };
+      const updated: EditableItem = { ...it, [field]: value };
+      if (field === 'sku' && value) {
+        const invLookup = lookupInventoryBySku(value, inventoryProducts);
+        if (invLookup.found) {
+          if (!updated.productName || updated.productName === '') updated.productName = invLookup.productName || '';
+          if (!updated.variation || updated.variation === '') updated.variation = invLookup.variationName || '';
+          if (invLookup.price) updated.price = invLookup.price;
+          if (invLookup.cost) updated.cost = invLookup.cost;
+          if (invLookup.weight) updated.weight = invLookup.weight;
+          toast.success(`تم جلب السعر (${invLookup.price} د.ج) والبيانات من المخزن تلقائياً`, { id: `sku-item-${id}` });
+        }
+      }
+      return updated;
     }));
   };
 

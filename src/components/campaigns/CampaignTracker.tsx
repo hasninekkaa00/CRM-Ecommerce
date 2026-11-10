@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../../store';
-import { Settings2, Plus, Edit2, Check, DollarSign, Trash2, Package, Megaphone, CalendarPlus, RefreshCw, Facebook } from 'lucide-react';
+import { Settings2, Plus, Edit2, Check, DollarSign, Trash2, Package, Megaphone, CalendarPlus, RefreshCw, Facebook, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, parseISO, eachDayOfInterval, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { fetchAndMapMetaMetrics } from '../../utils/metaSync';
 import { CampaignDashboard } from './CampaignDashboard';
+import { buildUniqueProductsData, toggleProductSelection, isProductChecked, getDisplayLinkedBadges, ProductOption } from '../../utils/campaignProductUtils';
 
 import { MetaAdsWizard } from './MetaAdsWizard';
 
@@ -149,40 +150,7 @@ export function CampaignTracker() {
   };
 
   const uniqueProductsData = useMemo(() => {
-    const list = new Map<string, { key: string, label: string }>();
-    const offerSkus = new Set<string>();
-
-    inventoryProducts.forEach(inv => {
-        if (!inv.name) return;
-        const isOffer = inv.local_is_offers !== undefined ? inv.local_is_offers : (inv.variations && inv.variations.some((v:any) => v.attributes?.some((a:any) => a.option && (a.option.includes('عرض') || a.option.includes('كمية') || a.option.includes('pack')))));
-
-        if (isOffer) {
-            if (inv.sku) list.set(inv.sku, { key: inv.sku, label: inv.name });
-            if (inv.variations) {
-                inv.variations.forEach((v:any) => { if (v.sku) offerSkus.add(v.sku); });
-            }
-        } else if (inv.variations && inv.variations.length > 0) {
-            if (inv.sku) list.set(inv.sku, { key: inv.sku, label: `${inv.name} (كل الأنواع)` });
-            
-            inv.variations.forEach((v:any) => {
-                const variationName = v.name || v.attributes?.map((a:any)=>a.option).join(' ') || '';
-                const key = v.sku;
-                const label = `${inv.name} - ${variationName}`;
-                if (key) list.set(key, { key, label });
-            });
-        } else {
-            const key = inv.sku;
-            if (key) list.set(key, { key, label: inv.name });
-        }
-    });
-
-    orders.forEach(o => {
-       if (o.sku && !list.has(o.sku) && !offerSkus.has(o.sku)) {
-          list.set(o.sku, { key: o.sku, label: o.productName || o.sku });
-       }
-    });
-
-    return Array.from(list.values()).sort((a,b) => a.label.localeCompare(b.label));
+    return buildUniqueProductsData(inventoryProducts, orders);
   }, [inventoryProducts, orders]);
 
   const handleCreateCampaign = () => {
@@ -486,24 +454,34 @@ export function CampaignTracker() {
                     <h3 className="text-xl font-black text-gray-900 mb-3 group-hover:text-indigo-700 transition-colors">{campaign.name}</h3>
                     
                     <div className="flex flex-wrap items-center gap-2 mb-6 mt-auto">
-                      {campaign.linkedProducts && campaign.linkedProducts.length > 0 ? (
-                        campaign.linkedProducts.map(p => {
-                          const label = uniqueProductsData.find(item => item.key === p)?.label || p;
+                      {(() => {
+                        const badges = getDisplayLinkedBadges(campaign.linkedProducts, uniqueProductsData);
+                        if (badges.length > 0) {
+                          return badges.map(badge => (
+                            <span 
+                              key={badge.key} 
+                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border ${
+                                badge.isAll 
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs' 
+                                  : 'bg-gray-50 text-gray-600 border-gray-200'
+                              }`} 
+                              title={badge.key}
+                            >
+                              {badge.isAll ? <Layers className="w-3.5 h-3.5 text-indigo-600" /> : <Package className="w-3.5 h-3.5" />}
+                              {badge.label}
+                            </span>
+                          ));
+                        }
+                        if (campaign.productName) {
                           return (
-                            <span key={p} className="flex items-center gap-1.5 bg-gray-50 text-gray-600 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200" title={p}>
+                            <span className="flex items-center gap-1.5 bg-gray-50 text-gray-600 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200" title={campaign.productName}>
                               <Package className="w-3.5 h-3.5" />
-                              {label}
+                              {uniqueProductsData.find(item => item.key === campaign.productName)?.label || campaign.productName}
                             </span>
                           );
-                        })
-                      ) : campaign.productName ? (
-                         <span className="flex items-center gap-1.5 bg-gray-50 text-gray-600 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200" title={campaign.productName}>
-                            <Package className="w-3.5 h-3.5" />
-                            {uniqueProductsData.find(item => item.key === campaign.productName)?.label || campaign.productName}
-                         </span>
-                      ) : (
-                         <span className="text-gray-400 text-[11px] font-bold bg-gray-50 px-2.5 py-1.5 rounded-xl border border-gray-100 border-dashed">بدون منتج مرتبط</span>
-                      )}
+                        }
+                        return <span className="text-gray-400 text-[11px] font-bold bg-gray-50 px-2.5 py-1.5 rounded-xl border border-gray-100 border-dashed">بدون منتج مرتبط</span>;
+                      })()}
                     </div>
                     
                     <div className="flex items-center justify-between pt-4 border-t border-gray-100">
@@ -548,26 +526,48 @@ export function CampaignTracker() {
               <div className="flex-shrink-0 flex flex-col justify-center">
                 <h3 className="text-xl font-black text-gray-900 leading-tight">{activeCampaign?.name}</h3>
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  {activeCampaign?.linkedProducts && activeCampaign.linkedProducts.length > 0 ? (
-                    activeCampaign.linkedProducts.map(p => (
-                      <span key={p} className="flex items-center gap-1 bg-gray-50 text-gray-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-gray-200">
-                        <Package className="w-3 h-3" />
-                        {p}
-                      </span>
-                    ))
-                  ) : activeCampaign?.productName ? (
-                     <span className="flex items-center gap-1 bg-gray-50 text-gray-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-gray-200">
-                        <Package className="w-3 h-3" />
-                        {activeCampaign.productName}
-                     </span>
-                  ) : (
-                     <span className="text-gray-400 text-[10px] font-bold bg-gray-50 px-2 py-0.5 rounded-lg border border-gray-100 border-dashed">بدون منتج مرتبط</span>
-                  )}
+                  {(() => {
+                    const badges = getDisplayLinkedBadges(activeCampaign?.linkedProducts, uniqueProductsData);
+                    if (badges.length > 0) {
+                      return badges.map(badge => (
+                        <span 
+                          key={badge.key} 
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                            badge.isAll 
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs' 
+                              : 'bg-gray-50 text-gray-600 border-gray-200'
+                          }`}
+                        >
+                          {badge.isAll ? <Layers className="w-3 h-3 text-indigo-600" /> : <Package className="w-3 h-3" />}
+                          {badge.label}
+                        </span>
+                      ));
+                    }
+                    if (activeCampaign?.productName) {
+                      return (
+                        <span className="flex items-center gap-1 bg-gray-50 text-gray-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-gray-200">
+                          <Package className="w-3 h-3" />
+                          {activeCampaign.productName}
+                        </span>
+                      );
+                    }
+                    return <span className="text-gray-400 text-[10px] font-bold bg-gray-50 px-2 py-0.5 rounded-lg border border-gray-100 border-dashed">بدون منتج مرتبط</span>;
+                  })()}
                   
                   <button 
                     onClick={() => {
                        setEditCampaignProductsId(activeCampaign?.id || null);
-                       setEditLinkedProducts(activeCampaign?.linkedProducts || (activeCampaign?.productName ? [activeCampaign.productName] : []));
+                       const initialLinked = activeCampaign?.linkedProducts || (activeCampaign?.productName ? [activeCampaign.productName] : []);
+                       const expandedLinked = new Set(initialLinked);
+                       uniqueProductsData.forEach(p => {
+                         if (p.isAllVariations && p.childVariationKeys) {
+                           if (initialLinked.includes(p.key) || (p.productId && initialLinked.includes(p.productId))) {
+                             expandedLinked.add(p.key);
+                             p.childVariationKeys.forEach(k => expandedLinked.add(k));
+                           }
+                         }
+                       });
+                       setEditLinkedProducts(Array.from(expandedLinked));
                        setEditBaseDailyBudget(activeCampaign?.baseDailyBudget ?? '');
                     }}
                     className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-indigo-50 transition"
@@ -801,27 +801,62 @@ export function CampaignTracker() {
                </div>
                <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">المنتجات المرتبطة بالحملة (اختر واحد أو أكثر)</label>
-                  <div className="border border-gray-200 rounded-xl max-h-48 overflow-y-auto bg-gray-50/50 p-2 space-y-1 custom-scrollbar">
+                  <div className="border border-gray-200 rounded-2xl max-h-56 overflow-y-auto bg-gray-50/50 p-2.5 space-y-1.5 custom-scrollbar">
                      {uniqueProductsData.length === 0 ? (
                         <p className="text-sm text-gray-500 p-2 font-medium">لا توجد منتجات مسجلة في المخزن أو الطلبيات بعد.</p>
                      ) : (
-                        uniqueProductsData.map(p => (
-                           <label key={p.key} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-200 shadow-sm hover:shadow">
-                              <input 
-                                 type="checkbox"
-                                 checked={newLinkedProducts.includes(p.key)}
-                                 onChange={(e) => {
-                                    if (e.target.checked) {
-                                       setNewLinkedProducts([...newLinkedProducts, p.key]);
-                                    } else {
-                                       setNewLinkedProducts(newLinkedProducts.filter(item => item !== p.key));
-                                    }
-                                 }}
-                                 className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                              />
-                              <span className="text-sm font-bold text-gray-700">{p.label} <span className="text-[10px] text-gray-400 font-normal ml-2">{p.key}</span></span>
-                           </label>
-                        ))
+                        uniqueProductsData.map(p => {
+                           const isChecked = isProductChecked(p, newLinkedProducts);
+                           return (
+                              <label 
+                                 key={p.key} 
+                                 className={`flex items-center justify-between p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                    p.isAllVariations 
+                                       ? (isChecked 
+                                           ? 'bg-indigo-50 border-indigo-300 text-indigo-950 shadow-xs ring-1 ring-indigo-200' 
+                                           : 'bg-indigo-50/20 border-indigo-100 hover:border-indigo-200 hover:bg-indigo-50/40 text-gray-800')
+                                       : p.isVariation 
+                                       ? (isChecked 
+                                           ? 'bg-white border-blue-200 text-blue-900 shadow-2xs mr-4' 
+                                           : 'hover:bg-white border-transparent hover:border-gray-200 text-gray-600 mr-4')
+                                       : (isChecked 
+                                           ? 'bg-white border-indigo-200 text-gray-900 shadow-2xs' 
+                                           : 'hover:bg-white border-transparent hover:border-gray-200 text-gray-700')
+                                 }`}
+                              >
+                                 <div className="flex items-center gap-2.5 min-w-0">
+                                    <input 
+                                       type="checkbox"
+                                       checked={isChecked}
+                                       onChange={() => {
+                                          setNewLinkedProducts(toggleProductSelection(p, newLinkedProducts, uniqueProductsData));
+                                       }}
+                                       className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                    />
+                                    {p.isAllVariations ? (
+                                       <div className="flex items-center gap-1.5 min-w-0">
+                                          <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+                                          <span className="text-sm font-black text-gray-900 truncate">{p.label}</span>
+                                       </div>
+                                    ) : p.isVariation ? (
+                                       <div className="flex items-center gap-2 min-w-0">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+                                          <span className="text-xs font-bold text-gray-700 truncate">{p.label}</span>
+                                       </div>
+                                    ) : (
+                                       <span className="text-sm font-bold text-gray-800 truncate">{p.label}</span>
+                                    )}
+                                 </div>
+                                 {p.isAllVariations ? (
+                                    <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 shrink-0">
+                                       كل الموديلات ({p.variationsCount})
+                                    </span>
+                                 ) : (
+                                    <span className="text-[10px] text-gray-400 font-mono shrink-0 mr-2">{p.key}</span>
+                                 )}
+                              </label>
+                           );
+                        })
                      )}
                   </div>
                </div>
@@ -882,27 +917,62 @@ export function CampaignTracker() {
             <p className="text-sm font-medium text-gray-500 mb-6">اختر المنتجات المرتبطة بهذه الحملة ليتم تتبع مؤشراتها معاً.</p>
             
             <div className="space-y-4 mb-6">
-               <div className="border border-gray-200 rounded-xl max-h-48 overflow-y-auto bg-gray-50/50 p-2 space-y-1 custom-scrollbar">
+               <div className="border border-gray-200 rounded-2xl max-h-56 overflow-y-auto bg-gray-50/50 p-2.5 space-y-1.5 custom-scrollbar">
                   {uniqueProductsData.length === 0 ? (
                      <p className="text-sm text-gray-500 p-2 font-medium">لا توجد منتجات مسجلة في المخزن أو الطلبيات بعد.</p>
                   ) : (
-                     uniqueProductsData.map(p => (
-                        <label key={p.key} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-200 shadow-sm hover:shadow">
-                           <input 
-                              type="checkbox"
-                              checked={editLinkedProducts.includes(p.key)}
-                              onChange={(e) => {
-                                 if (e.target.checked) {
-                                    setEditLinkedProducts([...editLinkedProducts, p.key]);
-                                 } else {
-                                    setEditLinkedProducts(editLinkedProducts.filter(item => item !== p.key));
-                                 }
-                              }}
-                              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                           />
-                           <span className="text-sm font-bold text-gray-700">{p.label} <span className="text-[10px] text-gray-400 font-normal ml-2">{p.key}</span></span>
-                        </label>
-                     ))
+                     uniqueProductsData.map(p => {
+                        const isChecked = isProductChecked(p, editLinkedProducts);
+                        return (
+                           <label 
+                              key={p.key} 
+                              className={`flex items-center justify-between p-2.5 rounded-xl transition-all cursor-pointer border ${
+                                 p.isAllVariations 
+                                    ? (isChecked 
+                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-950 shadow-xs ring-1 ring-indigo-200' 
+                                        : 'bg-indigo-50/20 border-indigo-100 hover:border-indigo-200 hover:bg-indigo-50/40 text-gray-800')
+                                    : p.isVariation 
+                                    ? (isChecked 
+                                        ? 'bg-white border-blue-200 text-blue-900 shadow-2xs mr-4' 
+                                        : 'hover:bg-white border-transparent hover:border-gray-200 text-gray-600 mr-4')
+                                    : (isChecked 
+                                        ? 'bg-white border-indigo-200 text-gray-900 shadow-2xs' 
+                                        : 'hover:bg-white border-transparent hover:border-gray-200 text-gray-700')
+                              }`}
+                           >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                 <input 
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                       setEditLinkedProducts(toggleProductSelection(p, editLinkedProducts, uniqueProductsData));
+                                    }}
+                                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                 />
+                                 {p.isAllVariations ? (
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                       <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
+                                       <span className="text-sm font-black text-gray-900 truncate">{p.label}</span>
+                                    </div>
+                                 ) : p.isVariation ? (
+                                    <div className="flex items-center gap-2 min-w-0">
+                                       <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+                                       <span className="text-xs font-bold text-gray-700 truncate">{p.label}</span>
+                                    </div>
+                                 ) : (
+                                    <span className="text-sm font-bold text-gray-800 truncate">{p.label}</span>
+                                 )}
+                              </div>
+                              {p.isAllVariations ? (
+                                 <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 shrink-0">
+                                    كل الموديلات ({p.variationsCount})
+                                 </span>
+                              ) : (
+                                 <span className="text-[10px] text-gray-400 font-mono shrink-0 mr-2">{p.key}</span>
+                              )}
+                           </label>
+                        );
+                     })
                   )}
                </div>
                <div>

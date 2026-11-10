@@ -27,6 +27,8 @@ import { ReplaceOrderModal } from './ReplaceOrderModal';
 import { PickingListModal } from './PickingListModal';
 import { QuickAddTagModal } from './QuickAddTagModal';
 import { checkProductMatch, renderProductFilterOptions } from '../../utils/productFilters';
+import { SavedViewsSelector } from './SavedViewsSelector';
+import { SavedOrderView, SavedOrderViewFilters, getSavedOrderViews, getActiveOrderViewId } from '../../utils/savedOrderViews';
 import { ShoppingCart } from 'lucide-react';
 import { formatWilaya, WILAYAS_MAP } from '../../utils/algeriaWilayas';
 import ecotrackCommunes from '../../ecotrack-communes.json';
@@ -52,7 +54,7 @@ import {
 } from '../../utils/tagUtils';
 import { checkOrderDeletionIntegrity, IntegrityCheckResult } from '../../utils/dataIntegrity';
 import { IntegrityProtectionModal } from '../common/IntegrityProtectionModal';
-import { resolveShippingDisplayNames, getOrderUnitAndTotalCost } from '../../utils/productCostUtils';
+import { resolveShippingDisplayNames, getOrderUnitAndTotalCost, lookupInventoryBySku } from '../../utils/productCostUtils';
 import { getOrderRowColorInfo } from '../../utils/statusColorUtils';
 import { calculateOrderShippingWeight, normalizeWeightToKg, formatWeightArabic } from '../../utils/weightUtils';
 import { syncOrderItems, prepareOrderForShipping } from '../../utils/orderSyncUtils';
@@ -212,7 +214,34 @@ const getStopDeskStatus = (order: any): StopDeskStatus => {
   }
 
   const wilayaCommunes = (ecotrackCommunes as any[]).filter((c: any) => c.wilaya_id === parsedWilaya);
-  const availableCommunes = wilayaCommunes.filter(c => c.has_stop_desk === 1);
+  
+  // Merge in communes from shippingBureaus (API or manual) that support Stop Desk for this wilaya
+  const allBureaus = useStore.getState().shippingBureaus || [];
+  const wilayaCodeStr = parsedWilaya < 10 ? `0${parsedWilaya}` : `${parsedWilaya}`;
+  const wilayaBureaus = allBureaus.filter(b => 
+    (b.wilayaCode === wilayaCodeStr || parseInt(b.wilayaCode, 10) === parsedWilaya) && 
+    b.hasStopDesk !== false
+  );
+  
+  const availableCommunesMap = new Map<string, any>();
+  wilayaCommunes.filter(c => c.has_stop_desk === 1).forEach(c => {
+    availableCommunesMap.set(c.nom.toLowerCase(), c);
+  });
+  
+  wilayaBureaus.forEach(b => {
+    if (b.communeName && !availableCommunesMap.has(b.communeName.toLowerCase())) {
+      availableCommunesMap.set(b.communeName.toLowerCase(), {
+        nom: b.communeName,
+        wilaya_id: parsedWilaya,
+        has_stop_desk: 1,
+        deskName: b.deskName,
+        address: b.address,
+        phones: b.phones
+      });
+    }
+  });
+  
+  const availableCommunes = Array.from(availableCommunesMap.values());
   
   let defaultCommune = availableCommunes.length > 0 ? availableCommunes[0].nom : undefined;
   if (parsedWilaya >= 1 && parsedWilaya <= 58) {
@@ -650,7 +679,10 @@ export function OrdersList() {
        }
     }
     try {
-      const data = await createShippingOrder(shippingOrder, integration);
+      const data = await createShippingOrder(shippingOrder, integration, {
+        communeMappings: settings?.communeMappings,
+        cityCorrections: settings?.cityCorrections
+      });
       
       if (!data.success) {
          let errMsg = data.message || 'حدث خطأ أثناء تمرير الطلبية لشركة الشحن.';
@@ -761,6 +793,84 @@ export function OrdersList() {
     localStorage.setItem('orders_channelFilter', channelFilter);
     localStorage.setItem('orders_hiddenChannels', JSON.stringify(hiddenChannels));
   }, [statusFilter, hiddenStatuses, hiddenStatuses2, hiddenTags, status2Filter, productFilter, dateFilter, confirmedByFilter, deliveryMethodFilter, deliveryCompanyFilter, tagFilter, channelFilter, hiddenChannels]);
+
+  // Saved Filter Views bundle & handler
+  const currentViewFilters: SavedOrderViewFilters = React.useMemo(() => ({
+    statusFilter,
+    hiddenStatuses,
+    status2Filter,
+    hiddenStatuses2,
+    tagFilter,
+    hiddenTags,
+    channelFilter,
+    hiddenChannels,
+    productFilter,
+    dateFilter,
+    confirmedByFilter,
+    deliveryMethodFilter,
+    deliveryCompanyFilter,
+    activeFilterTab,
+    collapseAllFilters,
+    showFilters,
+    viewMode,
+    currentTab
+  }), [
+    statusFilter,
+    hiddenStatuses,
+    status2Filter,
+    hiddenStatuses2,
+    tagFilter,
+    hiddenTags,
+    channelFilter,
+    hiddenChannels,
+    productFilter,
+    dateFilter,
+    confirmedByFilter,
+    deliveryMethodFilter,
+    deliveryCompanyFilter,
+    activeFilterTab,
+    collapseAllFilters,
+    showFilters,
+    viewMode,
+    currentTab
+  ]);
+
+  const handleApplySavedView = React.useCallback((view: SavedOrderView) => {
+    const f = view.filters;
+    setStatusFilter(f.statusFilter);
+    setHiddenStatuses(f.hiddenStatuses || []);
+    setStatus2Filter(f.status2Filter);
+    setHiddenStatuses2(f.hiddenStatuses2 || []);
+    setTagFilter(f.tagFilter);
+    setHiddenTags(f.hiddenTags || []);
+    setChannelFilter(f.channelFilter);
+    setHiddenChannels(f.hiddenChannels || []);
+    setProductFilter(f.productFilter);
+    setGlobalProductFilter(f.productFilter);
+    setDateFilter(f.dateFilter);
+    if (f.confirmedByFilter) setConfirmedByFilter(f.confirmedByFilter);
+    if (f.deliveryMethodFilter) setDeliveryMethodFilter(f.deliveryMethodFilter);
+    if (f.deliveryCompanyFilter) setDeliveryCompanyFilter(f.deliveryCompanyFilter);
+    if (f.activeFilterTab) {
+      setActiveFilterTab(f.activeFilterTab);
+      localStorage.setItem('orders_activeFilterTab', f.activeFilterTab);
+    }
+    if (f.collapseAllFilters !== undefined) {
+      setCollapseAllFilters(f.collapseAllFilters);
+      localStorage.setItem('orders_collapseAllFilters', String(f.collapseAllFilters));
+    }
+    if (f.showFilters !== undefined) {
+      setShowFilters(f.showFilters);
+    }
+    if (f.viewMode) {
+      setViewMode(f.viewMode);
+      localStorage.setItem('orders_viewMode', f.viewMode);
+    }
+    if (f.currentTab) {
+      setCurrentTab(f.currentTab);
+    }
+    setCurrentPage(1);
+  }, [setGlobalProductFilter]);
 
   // Sorting
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>({key: 'orderDate', direction: 'desc'});
@@ -1120,6 +1230,8 @@ export function OrdersList() {
       }
       const syncedDraft = syncOrderItems({ ...editDraft, city: finalCity }, inventoryProducts);
       await updateOrder(editingId, syncedDraft);
+      playActionSound('success');
+      toast.success('تم حفظ التعديلات وتحديث قائمة التجهيز وكافة الحسابات بنجاح!');
     }
     setEditingId(null);
     setEditDraft(null);
@@ -1447,6 +1559,13 @@ export function OrdersList() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Saved Filter Views System */}
+          <SavedViewsSelector
+            currentFilters={currentViewFilters}
+            onApplyView={handleApplySavedView}
+            ordersCount={filteredOrders.length}
+          />
+
           <div className="relative flex-1 sm:w-56">
             <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
@@ -2151,15 +2270,29 @@ export function OrdersList() {
                       backgroundColor: rowColor.backgroundColor,
                       color: rowColor.textColor,
                     }}
-                    className="transition-colors border-b hover:brightness-[0.96]"
+                    onDoubleClick={() => {
+                      if (!isEditing) {
+                        handleEdit(order);
+                      }
+                    }}
+                    title={!isEditing ? "انقر مرتين على أي حقل للتعديل السريع أو استخدم قلم التعديل" : "اضغط Enter أو زر الحفظ الأخضر عند الانتهاء من التعديلات"}
+                    className={`transition-colors border-b hover:brightness-[0.96] ${!isEditing ? 'cursor-pointer' : ''}`}
                   >
-                    <td className="p-2 text-center border-r border-gray-100/50" style={{ width: colWidths.select, minWidth: colWidths.select, maxWidth: colWidths.select }}>
+                    <td 
+                      className="p-2 text-center border-r border-gray-100/50" 
+                      style={{ width: colWidths.select, minWidth: colWidths.select, maxWidth: colWidths.select }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
                       <input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={(e) => {
                         if (e.target.checked) setSelectedOrders([...selectedOrders, order.id]);
                         else setSelectedOrders(selectedOrders.filter(id => id !== order.id));
                       }} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
                     </td>
-                    <td className="p-2 font-bold font-mono border-r border-gray-100/50" style={{ width: colWidths.orderId, minWidth: colWidths.orderId, maxWidth: colWidths.orderId, overflow: 'visible' }}>
+                    <td 
+                      className="p-2 font-bold font-mono border-r border-gray-100/50" 
+                      style={{ width: colWidths.orderId, minWidth: colWidths.orderId, maxWidth: colWidths.orderId, overflow: 'visible' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       <div className="flex flex-col gap-1 items-start">
                         <div className="flex items-center gap-1 flex-wrap">
                           <span>#{order.orderId}</span>
@@ -2169,6 +2302,7 @@ export function OrdersList() {
                           <select
                             value={editDraft.sourceChannel || getOrderChannelName(order, salesChannels) || ''}
                             onChange={(e) => setEditDraft({ ...editDraft, sourceChannel: e.target.value })}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             className="text-[10px] py-0.5 px-1 rounded border border-indigo-200 bg-indigo-50 font-sans font-bold text-indigo-800 outline-none"
                             title="تعديل قناة البيع"
                           >
@@ -2198,44 +2332,72 @@ export function OrdersList() {
                         )}
                       </div>
                     </td>
-                    <td className="p-2 font-bold opacity-90 border-r border-gray-100/50" style={{ width: colWidths.orderDate, minWidth: colWidths.orderDate, maxWidth: colWidths.orderDate, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={format(parseISO(order.orderDate), 'dd MMM yyyy HH:mm', { locale: ar })}>
+                    <td 
+                      className="p-2 font-bold opacity-90 border-r border-gray-100/50" 
+                      style={{ width: colWidths.orderDate, minWidth: colWidths.orderDate, maxWidth: colWidths.orderDate, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
+                      title={format(parseISO(order.orderDate), 'dd MMM yyyy HH:mm', { locale: ar })}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       <div className="flex flex-col justify-center">
                         <span>{format(parseISO(order.orderDate), 'dd MMM', { locale: ar })}</span>
                         <span className="text-[10px] text-gray-500 font-medium">{format(parseISO(order.orderDate), 'HH:mm')}</span>
                       </div>
                     </td>
-                    <td className="p-2 font-extrabold border-r border-gray-100/50 whitespace-nowrap" style={{ width: colWidths.fullName, minWidth: colWidths.fullName, maxWidth: colWidths.fullName }}>
+                    <td 
+                      className="p-2 font-extrabold border-r border-gray-100/50 whitespace-nowrap" 
+                      style={{ width: colWidths.fullName, minWidth: colWidths.fullName, maxWidth: colWidths.fullName }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       {isEditing && editDraft ? (
                         <input
                           type="text"
                           value={editDraft.fullName || ''}
                           onChange={(e) => setEditDraft({ ...editDraft, fullName: e.target.value })}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
                           className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
+                          title="الاسم الكامل | اضغط Enter أو زر الحفظ للحفظ"
                         />
                       ) : (
-                        order.fullName
+                        <div className="flex items-center justify-between group/cell" title="انقر مرتين للتعديل المباشر أو استخدم قلم التعديل">
+                          <span>{order.fullName}</span>
+                          <Edit2 className="w-2.5 h-2.5 text-slate-300 opacity-0 group-hover/cell:opacity-100 transition-opacity shrink-0 mr-1" />
+                        </div>
                       )}
                     </td>
-                    <td className="p-2 font-bold text-blue-600 border-r border-gray-100 whitespace-nowrap" dir="ltr" style={{ width: colWidths.phone, minWidth: colWidths.phone, maxWidth: colWidths.phone, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <td 
+                      className="p-2 font-bold text-blue-600 border-r border-gray-100 whitespace-nowrap" 
+                      dir="ltr" 
+                      style={{ width: colWidths.phone, minWidth: colWidths.phone, maxWidth: colWidths.phone, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       {isEditing && editDraft ? (
                         <input
                           type="text"
                           value={editDraft.phone || ''}
                           onChange={(e) => setEditDraft({ ...editDraft, phone: e.target.value })}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
                           className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500 text-left"
+                          title="الهاتف | اضغط Enter أو زر الحفظ للحفظ"
                         />
                       ) : (
-                        <div className="flex items-center gap-1.5 justify-end">
-                           <a href={`tel:${order.phone}`} className="hover:underline hover:text-blue-800">
+                        <div className="flex items-center gap-1.5 justify-end group/cell" title="انقر مرتين للتعديل المباشر">
+                           <a href={`tel:${order.phone}`} onClick={(e) => e.stopPropagation()} className="hover:underline hover:text-blue-800">
                              {order.phone}
                            </a>
                            {order.phone && phoneCounts[order.phone] > 1 && (
                              <span className="bg-red-100 text-red-700 text-[9px] px-1.5 py-0.5 rounded-md font-black" title="طلب مكرر بنفس رقم الهاتف">مكرر</span>
                            )}
+                           <Edit2 className="w-2.5 h-2.5 text-slate-300 opacity-0 group-hover/cell:opacity-100 transition-opacity shrink-0 ml-1" />
                         </div>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-extrabold bg-transparent text-blue-950 text-ellipsis overflow-hidden whitespace-nowrap" style={{ width: colWidths.region, minWidth: colWidths.region, maxWidth: colWidths.region }}>
+                    <td 
+                      className="p-2 border-r border-gray-100 font-extrabold bg-transparent text-blue-950 text-ellipsis overflow-hidden whitespace-nowrap" 
+                      style={{ width: colWidths.region, minWidth: colWidths.region, maxWidth: colWidths.region }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       {isEditing && editDraft ? (
                         <select
                           value={getWilayaCode(editDraft.region)}
@@ -2260,7 +2422,9 @@ export function OrdersList() {
                               setEditDraft({ ...editDraft, region: '', city: '' });
                             }
                           }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           className="w-full border border-gray-300 rounded px-1 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500 bg-white"
+                          title="الولاية"
                         >
                           <option value="">اختر الولاية...</option>
                           {ALGERIA_WILAYAS.map((w) => (
@@ -2270,10 +2434,17 @@ export function OrdersList() {
                           ))}
                         </select>
                       ) : (
-                        formatWilaya(order.region)
+                        <div className="flex items-center justify-between group/cell" title="انقر مرتين للتعديل المباشر">
+                          <span>{formatWilaya(order.region)}</span>
+                          <Edit2 className="w-2.5 h-2.5 text-slate-300 opacity-0 group-hover/cell:opacity-100 transition-opacity shrink-0 mr-1" />
+                        </div>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-bold text-gray-800 whitespace-nowrap relative" style={{ width: colWidths.city, minWidth: colWidths.city, maxWidth: colWidths.city, overflow: 'visible', textOverflow: 'ellipsis' }}>
+                    <td 
+                      className="p-2 border-r border-gray-100 font-bold text-gray-800 whitespace-nowrap relative" 
+                      style={{ width: colWidths.city, minWidth: colWidths.city, maxWidth: colWidths.city, overflow: 'visible', textOverflow: 'ellipsis' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                    >
                       {isEditing && editDraft ? (
                         <div className="flex flex-col gap-1 w-full relative">
                           {(() => {
@@ -2289,7 +2460,9 @@ export function OrdersList() {
                                 <select
                                   value={editDraft.city || ''}
                                   onChange={(e) => setEditDraft({ ...editDraft, city: e.target.value })}
+                                  onDoubleClick={(e) => e.stopPropagation()}
                                   className={`w-full border rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none ${stopDeskStatus.isStopDesk ? (stopDeskStatus.isValid ? 'border-green-400 focus:border-green-500' : 'border-red-400 focus:border-red-500') : 'border-gray-300 focus:border-blue-500'} bg-white`}
+                                  title="البلدية"
                                 >
                                   <option value="">اختر البلدية...</option>
                                   {communes.map((c, idx) => (
@@ -2312,8 +2485,11 @@ export function OrdersList() {
                                   type="text"
                                   value={editDraft.city || ''}
                                   onChange={(e) => setEditDraft({ ...editDraft, city: e.target.value })}
+                                  onDoubleClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
                                   className={`w-full border rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none ${stopDeskStatus.isStopDesk ? (stopDeskStatus.isValid ? 'border-green-400 focus:border-green-500' : 'border-red-400 focus:border-red-500') : 'border-gray-300 focus:border-blue-500'}`}
                                   placeholder="البلدية/المدينة"
+                                  title="البلدية/المدينة | اضغط Enter أو زر الحفظ للحفظ"
                                 />
                               );
                             }
@@ -2321,8 +2497,10 @@ export function OrdersList() {
                           {stopDeskStatus.isStopDesk && !stopDeskStatus.isValid && stopDeskStatus.availableCommunes.length > 0 && (
                             <select
                                onChange={(e) => setEditDraft({ ...editDraft, stopdeskCommune: e.target.value })}
+                               onDoubleClick={(e) => e.stopPropagation()}
                                className="w-full mt-1 border border-red-300 rounded text-[10px] bg-red-50 text-red-900 py-0.5"
                                defaultValue={stopDeskStatus.defaultCommune || ""}
+                               title="تصحيح للمكتب"
                             >
                                <option value="" disabled>تصحيح للمكتب...</option>
                                {stopDeskStatus.availableCommunes.map((c: any, idx: number) => (
@@ -2332,9 +2510,10 @@ export function OrdersList() {
                           )}
                         </div>
                       ) : (
-                        <div className="flex flex-col gap-1 w-full">
+                        <div className="flex flex-col gap-1 w-full group/cell" title="انقر مرتين للتعديل المباشر">
                           <div className="flex items-center justify-between gap-1">
                             <span className="truncate">{order.city || '-'}</span>
+                            <Edit2 className="w-2.5 h-2.5 text-slate-300 opacity-0 group-hover/cell:opacity-100 transition-opacity shrink-0 mr-1" />
                           </div>
                           {(order.stopdeskCommune || (stopDeskStatus.isValid && stopDeskStatus.isStopDesk && stopDeskStatus.matchedCity)) && (
                             <div className="text-[9px] text-blue-700 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 font-bold w-max">
@@ -2344,12 +2523,22 @@ export function OrdersList() {
                         </div>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-semibold text-gray-900" style={{ width: colWidths.productName, minWidth: colWidths.productName, maxWidth: colWidths.productName }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 font-semibold text-gray-900 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.productName, minWidth: colWidths.productName, maxWidth: colWidths.productName }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل المباشر بالقلم" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1.5 left-1.5 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
-                        <div className="flex flex-col gap-1 w-full">
+                        <div className="flex flex-col gap-1 w-full" onDoubleClick={(e) => e.stopPropagation()}>
                            <button
                              type="button"
-                             onClick={() => setEditItemsModalOrder(editDraft)}
+                             onClick={(e) => { e.stopPropagation(); setEditItemsModalOrder(editDraft); }}
                              className="w-full flex items-center justify-center gap-1.5 px-2 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded text-[11px] font-black shadow-xs transition-colors"
                              title="إدارة وتعديل وإضافة منتجات متعددة للطلبية وحساب أسعارها والكريدي والوزن تلقائياً"
                            >
@@ -2363,7 +2552,7 @@ export function OrdersList() {
                                  if (!e.target.value) return;
                                  try {
                                     const parsed = JSON.parse(e.target.value);
-                                    const updates = { ...editDraft, sku: parsed.sku, productName: parsed.name, variation: parsed.variation };
+                                    const updates: any = { ...editDraft, sku: parsed.sku, productName: parsed.name, variation: parsed.variation };
                                     
                                     const newPriceStr = parsed.price;
                                     if (newPriceStr !== undefined) {
@@ -2378,6 +2567,7 @@ export function OrdersList() {
                                     }
                                     
                                     setEditDraft(updates);
+                                    toast.success(`تم اختيار "${parsed.name}" وجلب سعره من المخزن بنجاح`);
                                  } catch (err) {}
                               }}
                            >
@@ -2414,6 +2604,8 @@ export function OrdersList() {
                             type="text"
                             value={editDraft.productName || ''}
                             onChange={(e) => setEditDraft({ ...editDraft, productName: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
                             placeholder="اسم المنتج"
                           />
@@ -2421,16 +2613,38 @@ export function OrdersList() {
                             type="text"
                             value={editDraft.variation || ''}
                             onChange={(e) => setEditDraft({ ...editDraft, variation: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
-                            placeholder="تفاصيل"
+                            placeholder="تفاصيل / النوع"
                           />
                           <input
                             type="text"
                             value={editDraft.sku || ''}
-                            onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })}
+                            onChange={(e) => {
+                              const newSku = e.target.value;
+                              const updates: any = { ...editDraft, sku: newSku };
+                              if (newSku && newSku.trim()) {
+                                const invMatch = lookupInventoryBySku(newSku, inventoryProducts || []);
+                                if (invMatch.found) {
+                                  updates.productName = invMatch.productName;
+                                  if (invMatch.variationName) updates.variation = invMatch.variationName;
+                                  const q = Number(editDraft.qnts) || 1;
+                                  const deliv = Number(String(editDraft.deliveryPrice || '0').replace(/[^0-9.]/g, ''));
+                                  if (invMatch.price && invMatch.price > 0) {
+                                    updates.priceWithoutDelivery = invMatch.price * q;
+                                    updates.totalCharge = updates.priceWithoutDelivery + deliv;
+                                  }
+                                  toast.success(`تم العثور على SKU "${newSku}" وجلب السعر (${invMatch.price} د.ج) والمنتج تلقائياً`, { id: `sku-lookup-${order.id}` });
+                                }
+                              }
+                              setEditDraft(updates);
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             className="w-full border border-indigo-300 rounded px-1.5 py-0.5 text-[11px] font-mono focus:outline-none focus:border-indigo-500 bg-indigo-50 placeholder:text-indigo-500"
                             placeholder="رمز SKU للمزامنة"
-                            title="ادخل SKU لربط المنتج بالمخزن"
+                            title="ادخل SKU لجلب المنتج وسعره تلقائياً من المخزن"
                           />
                         </div>
                       ) : (
@@ -2469,17 +2683,38 @@ export function OrdersList() {
                         </div>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-bold text-gray-900" style={{ width: colWidths.qnts, minWidth: colWidths.qnts, maxWidth: colWidths.qnts, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 font-bold text-gray-900 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.qnts, minWidth: colWidths.qnts, maxWidth: colWidths.qnts, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <input
                           type="number"
                           min="1"
                           value={Number(editDraft.qnts) || 1}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                              const newQnts = Number(e.target.value) || 1;
                              const oldQnts = Number(editDraft.qnts) || 1;
-                             const currentPriceTotal = Number(String(editDraft.priceWithoutDelivery || '0').replace(/[^0-9.]/g, ''));
-                             const unitPrice = oldQnts > 0 ? (currentPriceTotal / oldQnts) : currentPriceTotal;
+                             let unitPrice = 0;
+                             if (editDraft.sku) {
+                               const invMatch = lookupInventoryBySku(editDraft.sku, inventoryProducts || []);
+                               if (invMatch.found && invMatch.price) {
+                                 unitPrice = invMatch.price;
+                               }
+                             }
+                             if (!unitPrice) {
+                               const currentPriceTotal = Number(String(editDraft.priceWithoutDelivery || '0').replace(/[^0-9.]/g, ''));
+                               unitPrice = oldQnts > 0 ? (currentPriceTotal / oldQnts) : currentPriceTotal;
+                             }
                              const newPriceTotal = unitPrice * newQnts;
                              const delivery = Number(String(editDraft.deliveryPrice || '0').replace(/[^0-9.]/g, ''));
                              setEditDraft({ ...editDraft, qnts: newQnts, priceWithoutDelivery: newPriceTotal, totalCharge: newPriceTotal + delivery });
@@ -2492,15 +2727,27 @@ export function OrdersList() {
                         </span>
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-transparent font-black text-emerald-950" style={{ width: colWidths.priceWithoutDelivery, minWidth: colWidths.priceWithoutDelivery, maxWidth: colWidths.priceWithoutDelivery, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 bg-transparent font-black text-emerald-950 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-emerald-50/20' : ''}`} 
+                      style={{ width: colWidths.priceWithoutDelivery, minWidth: colWidths.priceWithoutDelivery, maxWidth: colWidths.priceWithoutDelivery, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-emerald-600 bg-emerald-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <input
                           type="number"
                           value={Number(String(editDraft.priceWithoutDelivery || '0').replace(/[^0-9.]/g, ''))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                              const newPriceTotal = Number(e.target.value);
                              const delivery = Number(String(editDraft.deliveryPrice || '0').replace(/[^0-9.]/g, ''));
-                             setEditDraft({ ...editDraft, priceWithoutDelivery: newPriceTotal, totalCharge: newPriceTotal + delivery })
+                             setEditDraft({ ...editDraft, priceWithoutDelivery: newPriceTotal, totalCharge: newPriceTotal + delivery });
                           }}
                           className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
                         />
@@ -2508,10 +2755,22 @@ export function OrdersList() {
                         `${order.priceWithoutDelivery || 0} د.ج`
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-transparent font-bold text-gray-800" style={{ width: colWidths.shippingMethod, minWidth: colWidths.shippingMethod, maxWidth: colWidths.shippingMethod, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 bg-transparent font-bold text-gray-800 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.shippingMethod, minWidth: colWidths.shippingMethod, maxWidth: colWidths.shippingMethod, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <select
                           value={editDraft.shippingMethod || ''}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             const newMethod = e.target.value;
                             const wilayaCode = getWilayaCode(editDraft.region);
@@ -2541,11 +2800,23 @@ export function OrdersList() {
                         order.shippingMethod || '-'
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 bg-transparent font-black text-gray-900" style={{ width: colWidths.deliveryPrice, minWidth: colWidths.deliveryPrice, maxWidth: colWidths.deliveryPrice, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 bg-transparent font-black text-gray-900 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.deliveryPrice, minWidth: colWidths.deliveryPrice, maxWidth: colWidths.deliveryPrice, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <input
                           type="number"
                           value={Number(String(editDraft.deliveryPrice || '0').replace(/[^0-9.]/g, ''))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                              const delivery = Number(e.target.value);
                              const priceTotal = Number(String(editDraft.priceWithoutDelivery || '0').replace(/[^0-9.]/g, ''));
@@ -2557,11 +2828,23 @@ export function OrdersList() {
                         `${order.deliveryPrice || 0} د.ج`
                       )}
                     </td>
-                    <td className="p-2 border-r border-gray-100 font-extrabold text-blue-950 bg-transparent" style={{ width: colWidths.totalCharge, minWidth: colWidths.totalCharge, maxWidth: colWidths.totalCharge, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 font-extrabold text-blue-950 bg-transparent relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.totalCharge, minWidth: colWidths.totalCharge, maxWidth: colWidths.totalCharge, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-600 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <input
                           type="number"
                           value={Number(String(editDraft.totalCharge || '0').replace(/[^0-9.]/g, ''))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => setEditDraft({ ...editDraft, totalCharge: Number(e.target.value) })}
                           className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
                         />
@@ -2571,10 +2854,22 @@ export function OrdersList() {
                     </td>
 
                     {/* Editable Fields (Direct or Draft depending on editing state) */}
-                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.confirmedBy, minWidth: colWidths.confirmedBy, maxWidth: colWidths.confirmedBy }}>
+                    <td 
+                      className={`p-1.5 bg-transparent border-r border-blue-50/30 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.confirmedBy, minWidth: colWidths.confirmedBy, maxWidth: colWidths.confirmedBy }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل المباشر بالقلم" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       {confirmers.length > 0 ? (
                         <select
                           value={isEditing && editDraft ? (editDraft.confirmedBy || '') : (order.confirmedBy || '')}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (isEditing && editDraft) {
                               setEditDraft({ ...editDraft, confirmedBy: e.target.value });
@@ -2591,6 +2886,8 @@ export function OrdersList() {
                         <input
                           type="text"
                           value={isEditing && editDraft ? (editDraft.confirmedBy || '') : (order.confirmedBy || '')}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (isEditing && editDraft) {
                               setEditDraft({ ...editDraft, confirmedBy: e.target.value });
@@ -2603,9 +2900,21 @@ export function OrdersList() {
                         />
                       )}
                     </td>
-                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.status1, minWidth: colWidths.status1, maxWidth: colWidths.status1 }}>
+                    <td 
+                      className={`p-1.5 bg-transparent border-r border-blue-50/30 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.status1, minWidth: colWidths.status1, maxWidth: colWidths.status1 }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       <select
                           value={isEditing && editDraft ? (editDraft.status1 || '') : (order.status1 || '')}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (isEditing && editDraft) {
                               setEditDraft({ ...editDraft, status1: e.target.value });
@@ -2688,10 +2997,22 @@ export function OrdersList() {
                         </div>
                       </div>
                     </td>
-                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.deliveryCompany, minWidth: colWidths.deliveryCompany, maxWidth: colWidths.deliveryCompany, overflow: 'visible' }}>
+                    <td 
+                      className={`p-1.5 bg-transparent border-r border-blue-50/30 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.deliveryCompany, minWidth: colWidths.deliveryCompany, maxWidth: colWidths.deliveryCompany, overflow: 'visible' }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       <div className="flex flex-col gap-1 w-full">
                         <select
                           value={isEditing && editDraft ? (editDraft.deliveryCompany || '') : (order.deliveryCompany || '')}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (isEditing && editDraft) {
                               setEditDraft({ ...editDraft, deliveryCompany: e.target.value });
@@ -2801,10 +3122,22 @@ export function OrdersList() {
                         })()}
                       </div>
                     </td>
-                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.postponementDate, minWidth: colWidths.postponementDate, maxWidth: colWidths.postponementDate }}>
+                    <td 
+                      className={`p-1.5 bg-transparent border-r border-blue-50/30 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.postponementDate, minWidth: colWidths.postponementDate, maxWidth: colWidths.postponementDate }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       <input
                         type="date"
                         value={isEditing && editDraft ? (editDraft.postponementDate || '') : (order.postponementDate || '')}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         onChange={(e) => {
                           if (isEditing && editDraft) {
                             setEditDraft({ ...editDraft, postponementDate: e.target.value });
@@ -2815,9 +3148,21 @@ export function OrdersList() {
                         className="w-full bg-white border border-gray-200 rounded px-1 py-0.5 text-[11px] font-bold focus:outline-none transition-colors text-center cursor-pointer"
                       />
                     </td>
-                    <td className="p-1.5 bg-transparent border-r border-blue-50/30" style={{ width: colWidths.status2, minWidth: colWidths.status2, maxWidth: colWidths.status2 }}>
+                    <td 
+                      className={`p-1.5 bg-transparent border-r border-blue-50/30 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.status2, minWidth: colWidths.status2, maxWidth: colWidths.status2 }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       <select
                         value={isEditing && editDraft ? (editDraft.status2 || '') : (order.status2 || '')}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (isEditing && editDraft) {
@@ -2839,12 +3184,24 @@ export function OrdersList() {
                         {status2Options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                     </td>
-                    <td className="p-2 border-r border-gray-100" style={{ width: colWidths.notes, minWidth: colWidths.notes, maxWidth: colWidths.notes }}>
+                    <td 
+                      className={`p-2 border-r border-gray-100 relative group/cell ${!isEditing ? 'cursor-pointer hover:bg-blue-50/20' : ''}`} 
+                      style={{ width: colWidths.notes, minWidth: colWidths.notes, maxWidth: colWidths.notes }}
+                      onDoubleClick={() => !isEditing && handleEdit(order)}
+                      title={!isEditing ? "انقر مرتين للتعديل" : "اضغط Enter أو زر الحفظ عند الانتهاء"}
+                    >
+                      {!isEditing && (
+                        <span className="opacity-0 group-hover/cell:opacity-100 absolute top-1 left-1 text-blue-500 bg-blue-50 p-0.5 rounded shadow-xs transition-opacity pointer-events-none" title="تعديل سريع">
+                          <Edit2 className="w-2 h-2" />
+                        </span>
+                      )}
                       {isEditing && editDraft ? (
                         <input
                           key="edit-notes"
                           type="text"
                           value={editDraft.notes || ''}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
                           className="w-full border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-bold focus:outline-none focus:border-blue-500"
                           placeholder="ملاحظات"
@@ -2872,11 +3229,20 @@ export function OrdersList() {
 
                     <td className="p-2 text-center sticky left-0 z-10 shadow-[4px_0_6px_-2px_rgba(0,0,0,0.05)] transition-colors" style={{ width: colWidths.actions, minWidth: colWidths.actions, maxWidth: colWidths.actions, backgroundColor: rowColor.backgroundColor }}>
                       {isEditing ? (
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={handleSave} className="p-1 text-green-600 hover:bg-green-50 rounded" title="حفظ">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button 
+                            onClick={handleSave} 
+                            className="px-2 py-1 text-white bg-green-600 hover:bg-green-700 shadow-xs rounded flex items-center gap-1 text-[11px] font-black transition-all" 
+                            title="حفظ التعديلات (أو انقر مرتين في أي مكان / Enter)"
+                          >
                             <Check className="w-3.5 h-3.5" />
+                            <span>حفظ</span>
                           </button>
-                          <button onClick={handleCancel} className="p-1 text-red-600 hover:bg-red-50 rounded" title="إلغاء">
+                          <button 
+                            onClick={handleCancel} 
+                            className="p-1 text-red-600 hover:bg-red-50 rounded" 
+                            title="إلغاء التعديل"
+                          >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -2894,7 +3260,11 @@ export function OrdersList() {
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
                           {currentTab !== 'trash' && (
-                            <button onClick={() => handleEdit(order)} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="تعديل">
+                            <button 
+                              onClick={() => handleEdit(order)} 
+                              className="p-1 text-blue-600 hover:bg-blue-100 hover:text-blue-800 rounded transition-colors" 
+                              title="قلم التعديل (أو انقر مرتين على أي حقل للتعديل المباشر)"
+                            >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           )}

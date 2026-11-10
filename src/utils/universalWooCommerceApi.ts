@@ -1,3 +1,6 @@
+import { resolveEcoTrackCommune } from './communeMatchingUtils';
+import { extractWilayaCode } from './shippingFees';
+
 async function fetchWooCommerce(baseUrl: string, endpoint: string, consumerKey: string, consumerSecret: string, queryParams: Record<string, string | number> = {}): Promise<any> {
   const qParams = new URLSearchParams();
   for (const [key, val] of Object.entries(queryParams)) {
@@ -279,18 +282,20 @@ async function executeDirectWooCommerceOrdersSync(params: SyncWooCommerceParams)
   }
 
   const mappedOrders = ordersRaw.map((orderData: any) => {
-    let rawCity = orderData.billing?.city || orderData.shipping?.city || '';
-    if (rawCity.toLowerCase().includes('ain azal') || rawCity.includes('عين ازال') || rawCity.includes('عين أزال')) {
-      rawCity = 'Ain Azel';
-    }
+    let rawCity = (orderData.billing?.city || orderData.shipping?.city || '').trim();
+    const rawRegion = orderData.billing?.state || orderData.billing?.region || orderData.shipping?.state || '';
+    const wilayaCode = extractWilayaCode({ region: rawRegion, city: rawCity });
+    const resolved = resolveEcoTrackCommune(rawCity, wilayaCode);
+    const finalCity = (resolved.isResolved && resolved.finalNom) ? resolved.finalNom : rawCity;
+
     return {
       id: String(orderData.id),
       orderId: String(orderData.number || orderData.id),
       orderDate: orderData.date_created ? new Date(orderData.date_created).toISOString() : new Date().toISOString(),
       fullName: `${orderData.billing?.first_name || ''} ${orderData.billing?.last_name || ''}`.trim(),
       phone: orderData.billing?.phone || '',
-      region: orderData.billing?.state || orderData.billing?.region || orderData.shipping?.state || '',
-      city: rawCity,
+      region: rawRegion,
+      city: finalCity,
       productName: orderData.line_items?.map((i: any) => `${i.name}`).join(' + ') || 'منتج غير معروف',
       variation: orderData.line_items?.map((i: any) => {
         if (i.meta_data && i.meta_data.length > 0) {
